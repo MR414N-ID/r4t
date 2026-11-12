@@ -23,9 +23,9 @@ mkdir -p payload_smali
 cd payload_src/com/system/update
 
 # 4. Download Alat (Kalau belum ada)
-if [ ! -f d8.jar ]; then
-    echo "[~] Mendownload D8 Compiler..."
-    wget -q https://github.com/google/android-classyshark/releases/download/8.2.0/d8.jar
+if [ ! -f r8.jar ]; then
+    echo "[~] Mendownload R8/D8 Compiler dari Google Maven..."
+    wget -q https://maven.google.com/com/android/tools/r8/3.3.28/r8-3.3.28.jar -O r8.jar
 fi
 
 if [ ! -f baksmali.jar ]; then
@@ -33,7 +33,6 @@ if [ ! -f baksmali.jar ]; then
     wget -q https://github.com/baksmali/smali/releases/download/v2.5.2/baksmali-2.5.2.jar -O baksmali.jar
 fi
 
-# DOWNLOAD ANDROID SDK (android.jar) - BARU!
 if [ ! -f android.jar ]; then
     echo "[~] Mendownload Android SDK (android.jar)..."
     wget -q https://github.com/Sable/android-platforms/raw/master/android-30/android.jar
@@ -47,9 +46,9 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 6. Ubah .class ke .dex (PAKAI ANDROID.JAR)
+# 6. Ubah .class ke .dex (PAKAI R8.JAR)
 echo "[~] Mengubah ke format Android (.dex)..."
-java -cp d8.jar com.android.tools.r8.D8 --lib android.jar Payload.class --output .
+java -cp r8.jar com.android.tools.r8.D8 --lib android.jar Payload.class --output .
 if [ $? -ne 0 ]; then
     echo "❌ GAGAL: Error saat mengubah ke DEX."
     exit 1
