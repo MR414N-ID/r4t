@@ -22,6 +22,9 @@ mkdir -p payload_src/com/system/update
 mkdir -p payload_smali
 cd payload_src/com/system/update
 
+# Bersihkan file class lama biar ga bentrok
+rm -f *.class classes.dex
+
 # 4. Download Alat (Kalau belum ada)
 if [ ! -f r8.jar ]; then
     echo "[~] Mendownload R8/D8 Compiler dari Google Maven..."
@@ -42,13 +45,13 @@ fi
 echo "[~] Mengcompile Payload.java..."
 javac -cp "android.jar:." --release 11 Payload.java
 if [ $? -ne 0 ]; then
-    echo "❌ GAGAL: Error saat javac (Pastikan Payload.java ada di folder ini)."
+    echo "❌ GAGAL: Error saat javac."
     exit 1
 fi
 
-# 6. Ubah .class ke .dex (PAKAI R8.JAR)
+# 6. Ubah .class ke .dex (PAKAI *.class)
 echo "[~] Mengubah ke format Android (.dex)..."
-java -cp r8.jar com.android.tools.r8.D8 --lib android.jar Payload.class --output .
+java -cp r8.jar com.android.tools.r8.D8 --lib android.jar *.class --output .
 if [ $? -ne 0 ]; then
     echo "❌ GAGAL: Error saat mengubah ke DEX."
     exit 1
