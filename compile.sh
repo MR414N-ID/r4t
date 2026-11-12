@@ -25,10 +25,10 @@ cd payload_src/com/system/update
 # Bersihkan file class lama biar ga bentrok
 rm -f *.class classes.dex
 
-# 4. Download Alat (Kalau belum ada)
+# 4. Download Alat (PAKAI R8 VERSI TERBARU)
 if [ ! -f r8.jar ]; then
-    echo "[~] Mendownload R8/D8 Compiler dari Google Maven..."
-    wget -q https://maven.google.com/com/android/tools/r8/3.3.28/r8-3.3.28.jar -O r8.jar
+    echo "[~] Mendownload R8/D8 Compiler (Versi Baru)..."
+    wget -q https://maven.google.com/com/android/tools/r8/8.3.37/r8-8.3.37.jar -O r8.jar
 fi
 
 if [ ! -f baksmali.jar ]; then
