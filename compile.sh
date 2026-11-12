@@ -41,9 +41,9 @@ if [ ! -f android.jar ]; then
     wget -q https://github.com/Sable/android-platforms/raw/master/android-30/android.jar
 fi
 
-# 5. Compile Java ke .class (PAKAI --release 11)
+# 5. Compile Java ke .class (PAKAI --release 8)
 echo "[~] Mengcompile Payload.java..."
-javac -cp "android.jar:." --release 11 Payload.java
+javac -cp "android.jar:." --release 8 Payload.java
 if [ $? -ne 0 ]; then
     echo "❌ GAGAL: Error saat javac."
     exit 1
