@@ -26,6 +26,24 @@ user_states = {}
 def is_authorized(update: Update):
     return update.effective_chat.id == ALLOWED_CHAT_ID
 
+# ── FITUR AUTO-GENERATE KEYSTORE ──
+def ensure_keystore():
+    if not os.path.exists(KEYSTORE_PATH):
+        print("\n[~] File keystore tidak ditemukan. Membuat baru...")
+        cmd = (
+            f"keytool -genkey -v -keystore '{KEYSTORE_PATH}' -alias {KEY_ALIAS} "
+            f"-keyalg RSA -keysize 2048 -validity 10000 "
+            f"-storepass {KEYSTORE_PASS} -keypass {KEYSTORE_PASS} "
+            f"-dname \"CN=Android Debug,O=Android,C=US\""
+        )
+        try:
+            subprocess.run(cmd, shell=True, check=True, capture_output=True)
+            print("[+] Keystore berhasil dibuat otomatis!")
+        except subprocess.CalledProcessError as e:
+            print(f"[!] Gagal membuat keystore: {e}")
+    else:
+        print("[+] Keystore siap digunakan.")
+
 def inject_manifest(manifest_path):
     tree = ET.parse(manifest_path)
     root = tree.getroot()
@@ -183,7 +201,6 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="🔐 [4/4] Menandatangani APK...")
         signed_apk = f"{apk_new_path}.signed.apk"
         
-        # LANGSUNG SIGN TANPA ZIPALIGN
         subprocess.run(f"apksigner sign --ks {KEYSTORE_PATH} --ks-pass pass:{KEYSTORE_PASS} --ks-key-alias {KEY_ALIAS} --out '{signed_apk}' '{apk_new_path}'", shell=True, check=True, capture_output=True)
 
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="✅ **BUILD SUKSES!** APK siap di-install:", parse_mode='Markdown')
@@ -223,6 +240,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await process_apk(update, context, temp_apk_path, doc.file_name)
 
 def main():
+    # Panggil fungsi pembuat keystore otomatis
+    ensure_keystore()
+
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
