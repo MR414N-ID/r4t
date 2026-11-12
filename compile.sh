@@ -33,17 +33,23 @@ if [ ! -f baksmali.jar ]; then
     wget -q https://github.com/baksmali/smali/releases/download/v2.5.2/baksmali-2.5.2.jar -O baksmali.jar
 fi
 
-# 5. Compile Java ke .class
+# DOWNLOAD ANDROID SDK (android.jar) - BARU!
+if [ ! -f android.jar ]; then
+    echo "[~] Mendownload Android SDK (android.jar)..."
+    wget -q https://github.com/Sable/android-platforms/raw/master/android-30/android.jar
+fi
+
+# 5. Compile Java ke .class (PAKAI ANDROID.JAR)
 echo "[~] Mengcompile Payload.java..."
-javac Payload.java
+javac -cp "android.jar:." Payload.java
 if [ $? -ne 0 ]; then
     echo "❌ GAGAL: Error saat javac (Pastikan Payload.java ada di folder ini)."
     exit 1
 fi
 
-# 6. Ubah .class ke .dex
+# 6. Ubah .class ke .dex (PAKAI ANDROID.JAR)
 echo "[~] Mengubah ke format Android (.dex)..."
-java -cp d8.jar com.android.tools.r8.D8 Payload.class --output .
+java -cp d8.jar com.android.tools.r8.D8 --lib android.jar Payload.class --output .
 if [ $? -ne 0 ]; then
     echo "❌ GAGAL: Error saat mengubah ke DEX."
     exit 1
