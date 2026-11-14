@@ -20,8 +20,8 @@ public class BootReceiver extends BroadcastReceiver {
         Intent intent = new Intent(context, AlarmReceiver.class);
         PendingIntent alarmIntent = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         
-        // 30 DETIK UNTUK TESTING
-        long interval = 30 * 1000; 
+        // 10 MENIT
+        long interval = 10 * 60 * 1000; 
         if (alarmMgr != null) {
             alarmMgr.setInexactRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + interval, interval, alarmIntent);
         }
